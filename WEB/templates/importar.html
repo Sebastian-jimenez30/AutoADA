@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Importar Datos</h2>
+
+  <form method="post" action="/importar">
+    <label>Empresa:</label>
+    <input type="text" name="empresa" placeholder="Ej: ITCO" required>
+    <button type="submit">Iniciar Importación</button>
+  </form>
+
+  {% if result %}
+    <h3>Resultado:</h3>
+    <pre>{{ result }}</pre>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,22 @@
+body {
+  font-family: Segoe UI, sans-serif;
+  background: #f2f5f8;
+  color: #333;
+  padding: 40px;
+}
+
+h1, h2 {
+  color: #0d4b8a;
+}
+
+form {
+  margin-top: 20px;
+}
+
+pre {
+  background: #fff;
+  border: 1px solid #ccc;
+  padding: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}

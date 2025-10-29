@@ -1,0 +1,2456 @@
+{
+    "U1N": [
+        ".Q",
+        ".Value"
+    ],
+    "U2N": [
+        ".Q",
+        ".Value"
+    ],
+    "U3N": [
+        ".Q",
+        ".Value"
+    ],
+    "U1": [
+        ".Q",
+        ".Value"
+    ],
+    "U2": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "U3": [
+        ".Q",
+        ".Value"
+    ],
+    "I1": [
+        ".Q",
+        ".Value"
+    ],
+    "I2": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "I3": [
+        ".Q",
+        ".Value"
+    ],
+    "P": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "Q": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "S": [
+        ".Q",
+        ".Value"
+    ],
+    "FREQ": [
+        ".Q",
+        ".Value"
+    ],
+    "FP": [
+        ".Q",
+        ".Value"
+    ],
+    "UDESB": [
+        ".Q",
+        ".Value"
+    ],
+    "IDESB1": [
+        ".Q",
+        ".Value"
+    ],
+    "IDESB2": [
+        ".Q",
+        ".Value"
+    ],
+    "IDESB3": [
+        ".Q",
+        ".Value"
+    ],
+    "INEUTRO": [
+        ".Q",
+        ".Value"
+    ],
+    "TAP": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "TAP1": [
+        ".Q",
+        ".Value"
+    ],
+    "TAP2": [
+        ".Estimated",
+        ".Q",
+        ".Value"
+    ],
+    "TAP3": [
+        ".Q",
+        ".Value"
+    ],
+    "TAP4": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV1": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV2": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV3": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV4": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE1": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE2": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE3": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE4": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV_HOTSPOT": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV_HOTSPOT1": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV_HOTSPOT2": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV_HOTSPOT3": [
+        ".Q",
+        ".Value"
+    ],
+    "TDEV_HOTSPOT4": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE_INF": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE_BURB": [
+        ".Q",
+        ".Value"
+    ],
+    "TACE_MARG_BURB": [
+        ".Q",
+        ".Value"
+    ],
+    "FCARGA": [
+        ".Q",
+        ".Value"
+    ],
+    "HUM_AIRE": [
+        ".Q",
+        ".Value"
+    ],
+    "HUM_ACE": [
+        ".Q",
+        ".Value"
+    ],
+    "HUM_SUP_PAPEL": [
+        ".Q",
+        ".Value"
+    ],
+    "HUM_HOTSPOT_PAPEL": [
+        ".Q",
+        ".Value"
+    ],
+    "HUM_INF_PAPEL": [
+        ".Q",
+        ".Value"
+    ],
+    "HR_OPER": [
+        ".Q",
+        ".Value"
+    ],
+    "RATE_AGE": [
+        ".Q",
+        ".Value"
+    ],
+    "VID_RESID": [
+        ".Q",
+        ".Value"
+    ],
+    "TMS_NUM_SENS": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_IFUGA1": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_IFUGA2": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_IFUGA3": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP1_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP2_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP3_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP1_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP2_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP3_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP1_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP2_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_CAP3_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP1_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP2_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP3_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP1_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP2_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP3_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP1_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP2_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP3_MES": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_ANG1": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_ANG2": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_ANG3": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_DOM_FP": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_DOM_CAP": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_COD_ALARM": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_VAR_CAP1": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_VAR_CAP2": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_VAR_CAP3": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_VAR_CAP4": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP1": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP2": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP3": [
+        ".Q",
+        ".Value"
+    ],
+    "BUJ_FP4": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_FLL": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_REG": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_TEM": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_HUM": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_FLL": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_REG": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_TEM": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_HUM": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_FLL1": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_REG1": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_TEM1": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_HUM1": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_FLL1": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_REG1": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_TEM1": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_HUM1": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_FLL2": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_REG2": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_TEM2": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_HUM2": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_FLL2": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_REG2": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_TEM2": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_HUM2": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_FLL3": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_REG3": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_TEM3": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_HUM3": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_FLL3": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_REG3": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_TEM3": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_HUM3": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_FLL4": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_REG4": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_CUB_TEM4": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_CUB_HUM4": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_FLL4": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_REG4": [
+        ".Q",
+        ".State"
+    ],
+    "DESH_OLTC_TEM4": [
+        ".Q",
+        ".Value"
+    ],
+    "DESH_OLTC_HUM4": [
+        ".Q",
+        ".Value"
+    ],
+    "REFR_E1": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E2": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E1_1": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E2_1": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E1_2": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E2_2": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E1_3": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E2_3": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E1_4": [
+        ".Q",
+        ".State"
+    ],
+    "REFR_E2_4": [
+        ".Q",
+        ".State"
+    ],
+    "GAS_H2O": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CH4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H6": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_O2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_N2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CH4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CH4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CH4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CH4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H6_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H6_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H6_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H6_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_C2H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_O2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_O2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_O2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_O2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_N2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_N2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_N2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_N2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CO_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TACE": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TACE1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TACE2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TACE3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TACE4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TDEV": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TDEV1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TDEV2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TDEV3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_TDEV4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_RS_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_RS_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_RS_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_RS_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_RS": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2O": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CH4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H6": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_O2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_N2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2O_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2O_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2O_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2O_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CH4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CH4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CH4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CH4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H6_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H6_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H6_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H6_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_C2H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_O2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_O2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_O2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_O2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_N2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_N2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_N2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_N2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_CO_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_RS_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_RS_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_RS_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_RS_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_CUBA_RS": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2O": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CH4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H6": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_O2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_N2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2O_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2O_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2O_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2O_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CH4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CH4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CH4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CH4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H6_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H6_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H6_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H6_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H4_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_C2H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_O2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_O2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_O2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_O2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_N2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_N2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_N2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_N2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_CO_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_H2_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_RS_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_RS_2": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_RS_3": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_RS_4": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_OLTC_RS": [
+        ".Q",
+        ".Value"
+    ],
+    "IND_SALUD_1": [
+        ".Q",
+        ".Value"
+    ],
+    "IND_SALUD_2": [
+        ".Q",
+        ".Value"
+    ],
+    "IND_SALUD_3": [
+        ".Q",
+        ".Value"
+    ],
+    "IND_SALUD": [
+        ".Q",
+        ".Value"
+    ],
+    "CALIF": [
+        ".Q",
+        ".Value"
+    ],
+    "CALIF_1": [
+        ".Q",
+        ".Value"
+    ],
+    "CALIF_2": [
+        ".Q",
+        ".Value"
+    ],
+    "CALIF_3": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_FACTSEV": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_VAR_IND_SC": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_FACT_CARG": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_IEXC1": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_IEXC2": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_IEXC3": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_IEXCN": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_DESB_IPRI": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_DESB_ISEC": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_TAP": [
+        ".Q",
+        ".Value"
+    ],
+    "TRF_IPROM": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z1RTTR": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z1RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z1RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z1RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z2RTTR": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z2RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z2RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z2RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP_Z3RTTR": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP_Z3RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS_Z3RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP_Z3RTTR": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP1_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP1_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS1_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP1_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP2_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP2_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS2_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP2_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP3_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP3_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS3_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP3_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN1_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX1_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN2_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX2_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN3_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX3_Z1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP1_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP1_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS1_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP1_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP2_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP2_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS2_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP2_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP3_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP3_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS3_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP3_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN1_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX1_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN2_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX2_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN3_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX3_Z2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP1_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP1_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS1_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP1_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP2_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP2_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS2_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP2_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARTEMP3_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMP3_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_P-CALI_DIS3_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_PORCTEMP3_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN1_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX1_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN2_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX2_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMIN3_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_TEMPMAX3_Z3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_STATUS_SENSTEMP": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALAR_SENSTEMP": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_TEMPSENS": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARRUPFO": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO1_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO2_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO3_Z1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO1_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO2_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO3_Z2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO1_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO2_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARRUPFO3_Z3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_DISRUPFO": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DISRUPFO1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DISRUPFO2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DISRUPFO3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DPARCIAL1": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DPARCIAL2": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_DPARCIAL3": [
+        ".Q",
+        ".Value"
+    ],
+    "CABLE_ALARDPARCIAL1": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARDPARCIAL2": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_ALARDPARCIAL3": [
+        ".Q",
+        ".State"
+    ],
+    "CABLE_STATUS_SENSDPARCIAL": [
+        ".Q",
+        ".Value"
+    ],
+    "E1VENT": [
+        ".Q",
+        ".Value"
+    ],
+    "E2VENT": [
+        ".Q",
+        ".Value"
+    ],
+    "E1VENT_F1": [
+        ".Q",
+        ".Value"
+    ],
+    "E2VENT_F1": [
+        ".Q",
+        ".Value"
+    ],
+    "E1VENT_F2": [
+        ".Q",
+        ".Value"
+    ],
+    "E2VENT_F2": [
+        ".Q",
+        ".Value"
+    ],
+    "E1VENT_F3": [
+        ".Q",
+        ".Value"
+    ],
+    "E2VENT_F3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UCRESTA1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UCRESTA2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UCRESTA3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO1_1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO1_2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO1_3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO2_2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO2_3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO3_1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO3_2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO3_3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO4_1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO4_2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_DESRANGO4_3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_NUMDES1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_NUMDES2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_NUMDES3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IFUGA1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IFUGA2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IFUGA3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRNFUGA1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRNFUGA2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRNFUGA3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRFUGA1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRFUGA2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_IRFUGA3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UTRANS1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UTRANS2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_UTRANS3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TEMP1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TEMP2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TEMP3": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TSUB1": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TSUB2": [
+        ".Q",
+        ".Value"
+    ],
+    "PQ_TSUB3": [
+        ".Q",
+        ".Value"
+    ],
+    "TAMB": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_RELA": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_AIRE": [
+        ".Q",
+        ".Value"
+    ],
+    "GCPP_TEMP": [
+        ".Q",
+        ".Value"
+    ],
+    "GCPP_TAMB": [
+        ".Q",
+        ".Value"
+    ],
+    "GCPP_HUME_RELA": [
+        ".Q",
+        ".Value"
+    ],
+    "GCPP_HUME_EXTE": [
+        ".Q",
+        ".Value"
+    ],
+    "GCPP_PUNT_ROCI": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_UINF_ORD": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_USUP_ORD": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_UINF_FES": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_USUP_FES": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_UINF": [
+        ".Q",
+        ".Value"
+    ],
+    "VQC_USUP": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_UREF": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_UMAX": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_UMIN": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_QREF": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_QMAX": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_QMIN": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_PEND": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_GAN": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_TRINSER": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_TREIN": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_TDESC": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_MFLOT": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_RGANA": [
+        ".Q",
+        ".Value"
+    ],
+    "FACT_GANALC": [
+        ".Q",
+        ".Value"
+    ],
+    "ENER_VARI1": [
+        ".Q",
+        ".Value"
+    ],
+    "ENER_VARI2": [
+        ".Q",
+        ".Value"
+    ],
+    "ENER_VARI3": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_GAS_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "FUGA_GAS_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_ALAR_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_BLOQ_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "DESG_CONT": [
+        ".Q",
+        ".Value"
+    ],
+    "VELO_APER": [
+        ".Q",
+        ".Value"
+    ],
+    "VELO_CIER": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_APER": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_CIER": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_CIER_APER": [
+        ".Q",
+        ".Value"
+    ],
+    "NUM_OPER_CIER": [
+        ".Q",
+        ".Value"
+    ],
+    "NUM_OPER_FALL": [
+        ".Q",
+        ".Value"
+    ],
+    "NUM_OPER_DIA": [
+        ".Q",
+        ".Value"
+    ],
+    "NUM_OPER_SEM": [
+        ".Q",
+        ".Value"
+    ],
+    "NUM_ARRQ_MOTO": [
+        ".Q",
+        ".Value"
+    ],
+    "TIEM_MARC_MOTO": [
+        ".Q",
+        ".Value"
+    ],
+    "VARI_I12": [
+        ".Q",
+        ".Value"
+    ],
+    "VARI_I23": [
+        ".Q",
+        ".Value"
+    ],
+    "VARI_I31": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_COSPHI": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_CORR_GRUP": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_SECU_NEGA": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_HUME_ACEI": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_HUME_SUPE": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_PUNT_CALI_HUME": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_TASA_ENVE": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_VIDA_RESI": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_TEMP": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_INCL_EJEX": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_INCL_EJEY": [
+        ".Q",
+        ".Value"
+    ],
+    "SENS_IND_UV": [
+        ".Q",
+        ".Value"
+    ],
+    "TBAT": [
+        ".Q",
+        ".Value"
+    ],
+    "RBAT": [
+        ".Q",
+        ".Value"
+    ],
+    "UBAT": [
+        ".Q",
+        ".Value"
+    ],
+    "UBAN": [
+        ".Q",
+        ".Value"
+    ],
+    "UBANRIZ": [
+        ".Q",
+        ".Value"
+    ],
+    "TSALA": [
+        ".Q",
+        ".Value"
+    ],
+    "IFLOT": [
+        ".Q",
+        ".Value"
+    ],
+    "ICARGA": [
+        ".Q",
+        ".Value"
+    ],
+    "U1_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "U2_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "U3_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "I1_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "I2_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "I3_ANG": [
+        ".Q",
+        ".Value"
+    ],
+    "dFREQ": [
+        ".Q",
+        ".Value"
+    ],
+    "DENS_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TEMP_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_VAR_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "DENS1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TEMP1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_VAR1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "DENS2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TEMP2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_VAR2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "DENS3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "TEMP3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_VAR3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "STATUS": [
+        ".Q",
+        ".Value"
+    ],
+    "X": [
+        ".Q",
+        ".Value"
+    ],
+    "STP_U": [
+        ".Q",
+        ".Value"
+    ],
+    "STP_X": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_PESO_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_H2O_VOL_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_DEN_1": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_RELA_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_PRES_ABS_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_PRES_EST_1": [
+        ".Q",
+        ".Value"
+    ],
+    "GAS_PRES_REL_1": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI_N2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI_SF6_1": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI_GAS_N2_1": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI_GAS_SF6_1": [
+        ".Q",
+        ".Value"
+    ],
+    "POS_INT": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECB1": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECB2": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECBY": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECCA": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECIN": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECCSB1": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECCSB2": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECCLB1": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECCLB2": [
+        ".Q",
+        ".State"
+    ],
+    "POS_SECT": [
+        ".Q",
+        ".State"
+    ]
+}

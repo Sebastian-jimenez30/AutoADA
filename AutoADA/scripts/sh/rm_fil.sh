@@ -1,0 +1,24 @@
+#!/usr/bin/ksh
+cd /opt/osi/osi_cust/data/pythondir/dbdump
+rm SCADA_STATUS.csv
+rm SCADA_ANALOGS.csv
+rm SCADA_ACCUMULATOR.csv
+rm SCADA_SETPOINTS.csv
+rm FEP_SCAN.csv
+rm FEP_CONTROLS.csv
+rm ICCP_EXPORT.csv
+rm ICCP_IMPORT.csv
+rm OPENNET_BRANCH.csv
+rm OPENNET_BREAKER.csv
+rm OPENNET_GROUND.csv
+rm OPENNET_GENER.csv
+rm OPENNET_LOAD.csv
+rm OPENNET_SBUS.csv
+rm OPENNET_SHUNT.csv
+rm OPENNET_XFORM.csv
+rm CALC_GISA.csv
+rm OPENCALC_FORMULAS.csv
+cd /opt/osi/osi_cust/data/pythondir/hsh
+rm groups.json
+rm lookup_tables.json
+exit 0

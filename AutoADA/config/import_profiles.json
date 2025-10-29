@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "defaults": {
+    "scada": {
+      "enabled": true,
+      "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+      "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/db_sca_1.sh",
+      "files": "ALL"
+    },
+    "hsh": {
+      "enabled": true,
+      "collections": [
+        "groups",
+        "lookup_tables"
+      ],
+      "filters": {
+        "lookup_tables": {
+          "table_name": "Tabla1",
+          "deleted": false
+        }
+      }
+    },
+    "ods": {
+      "enabled": true,
+      "from_path_resolver": "display_by_domain",
+      "pattern": ".ODS"
+    }
+  },
+  "usecases": {
+    "buscar_key": {
+      "scada": {
+        "enabled": true
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": true
+      }
+    },
+    "buscar_keys": {
+      "scada": {
+        "enabled": true
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": true
+      }
+    },
+    "hsh_validar": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "hsh_crear_tag": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "hsh_cambiar_key": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "jobs_crear_senales": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/jobs_crear_señales.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": false
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "jobs_eliminar_senales": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/jobs_eliminar_señales.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": false
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "validar_unifilares": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/validar_unifilares.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": false
+      },
+      "ods": {
+        "enabled": true
+      }
+    },
+    "pruebas_pyp": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/pruebas.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": false
+      },
+      "ods": {
+        "enabled": false
+      }
+    }
+  }
+}
