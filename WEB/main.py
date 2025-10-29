@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from routes import importar_routes, login_routes
+from routes import login_routes, importar_routes, convertir_routes, menu_routes
 import sys, os
 
 # Añadir la carpeta del proyecto AutoADA al PYTHONPATH
@@ -19,10 +19,18 @@ templates = Jinja2Templates(directory="templates")
 
 # Incluir rutas
 app.include_router(importar_routes.router)
+app.include_router(menu_routes.router)
 app.include_router(login_routes.router)
 app.include_router(importar_routes.router)
+app.include_router(convertir_routes.router)
 
-# Ejecución manual (para desarrollo)
+from fastapi.responses import RedirectResponse
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/login")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

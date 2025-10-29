@@ -20,3 +20,32 @@ pre {
   max-height: 400px;
   overflow-y: auto;
 }
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-width: 300px;
+  margin-top: 25px;
+}
+
+.menu-btn {
+  text-decoration: none;
+  padding: 12px;
+  background-color: #0d4b8a;
+  color: white;
+  border-radius: 8px;
+  text-align: center;
+  transition: background-color 0.3s ease;
+}
+
+.menu-btn:hover {
+  background-color: #1468b3;
+}
+
+.logout {
+  background-color: #a33;
+}
+.logout:hover {
+  background-color: #c55;
+}

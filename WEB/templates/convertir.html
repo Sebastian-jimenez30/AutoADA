@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h2>Convertir Datos</h2>
+
+  <form method="post" action="/convertir">
+    <label>Empresa:</label>
+    <input type="text" name="empresa" placeholder="Ej: ITCO" required>
+    <button type="submit">Iniciar Conversión</button>
+  </form>
+
+  {% if result %}
+    <h3>Resultado:</h3>
+    <pre>{{ result }}</pre>
+  {% endif %}
+{% endblock %}
