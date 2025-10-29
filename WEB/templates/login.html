@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Inicio de Sesión</h2>
+
+<form method="post" action="/login">
+  <label>Usuario:</label>
+  <input type="text" name="usuario" required>
+
+  <label>Clave del Vault:</label>
+  <input type="password" name="clave" required>
+
+  <button type="submit">Desbloquear Vault</button>
+</form>
+
+{% if error %}
+  <p style="color:red;">{{ error }}</p>
+{% endif %}
+{% if success %}
+  <p style="color:green;">Vault desbloqueado correctamente.</p>
+{% endif %}
+{% endblock %}

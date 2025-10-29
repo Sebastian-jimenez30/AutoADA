@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from routes import importar_routes
+from routes import importar_routes, login_routes
 import sys, os
 
 # Añadir la carpeta del proyecto AutoADA al PYTHONPATH
@@ -18,6 +18,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # Incluir rutas
+app.include_router(importar_routes.router)
+app.include_router(login_routes.router)
 app.include_router(importar_routes.router)
 
 # Ejecución manual (para desarrollo)
