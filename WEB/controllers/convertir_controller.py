@@ -7,14 +7,13 @@ def ejecutar_convertir(empresa: str, tipo: str = "Buscar_keys"):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "AutoADA"))
 
-    # Comando correcto
-    cmd = build_cmd("scripts.Convertir_all", [empresa, tipo])
+    print(f"[DEBUG] AUTOADA_DIR = {AUTOADA_DIR} (type={type(AUTOADA_DIR)})")
 
-    # Cargar entorno seguro
+    cmd = build_cmd("scripts.Convertir_all", [empresa, tipo])
     env = VaultService.build_env()
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=AUTOADA_DIR, env=env)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(AUTOADA_DIR), env=env)
         output = result.stdout + "\n" + result.stderr
         return f"Comando ejecutado: {' '.join(cmd)}\n\nSalida:\n{output}"
     except Exception as e:
