@@ -7,7 +7,7 @@ from controllers import importar_controller
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/importar", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse("importar.html", {"request": request})
 
