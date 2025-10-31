@@ -10,7 +10,8 @@ templates = Jinja2Templates(directory="templates")
 def menu_page(request: Request):
     context = {
         "request": request,
-        "active_page": "inicio",
+        "active_page": None,
+        "active_section": "buscar",
         "page_title": "Dashboard operativo",
         "page_subtitle": "Visualiza el estado de los datos locales y ejecuta acciones clave del Automatismo DOT.",
     }

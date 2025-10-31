@@ -15,7 +15,8 @@ def _base_context(
 ):
     return {
         "request": request,
-        "active_page": "convertir",
+        "active_page": None,
+        "active_section": "hsh",
         "page_title": "Convertir datos",
         "page_subtitle": "Genera reportes operativos a partir de la información importada.",
         "empresa": empresa,

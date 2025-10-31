@@ -10,7 +10,8 @@ templates = Jinja2Templates(directory="templates")
 def _base_context(request: Request, empresa: str | None = None, result: str | None = None):
     return {
         "request": request,
-        "active_page": "importar",
+        "active_page": None,
+        "active_section": "buscar",
         "page_title": "Importar datos",
         "page_subtitle": "Sincroniza los datasets SCADA, HSH y ODS desde los servidores remotos autorizados.",
         "empresa": empresa,

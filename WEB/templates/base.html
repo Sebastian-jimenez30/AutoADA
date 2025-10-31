@@ -7,7 +7,7 @@
   <link rel="icon" href="{{ url_for('static', path='img/LogoDOT.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
 </head>
-<body>
+<body data-active-section="{{ active_section if active_section else '' }}">
   <div class="app-shell">
     <aside class="shell-sidebar">
       <div class="sidebar-brand">
@@ -19,32 +19,90 @@
       </div>
 
       <div class="nav-groups">
-        {% set navigation = [
-          {"key": "inicio", "label": "Inicio", "href": "/menu"},
-          {"key": "importar", "label": "Importar", "href": "/importar"},
-          {"key": "convertir", "label": "Convertir", "href": "/convertir"},
-          {"key": "hsh", "label": "HSH", "href": "#", "disabled": True},
-          {"key": "jobs", "label": "Jobs", "href": "#", "disabled": True},
-          {"key": "unifilares", "label": "Unifilares", "href": "#", "disabled": True},
-          {"key": "pruebas", "label": "Pruebas PyP", "href": "#", "disabled": True},
-          {"key": "consultar", "label": "Consultar", "href": "#", "disabled": True}
+        <p class="nav-heading">Panel</p>
+
+        {% set nav_sections = [
+          {
+            "key": "buscar",
+            "label": "Buscar",
+            "items": [
+              {"key": "buscar_key", "label": "Buscar Key", "route": "buscar_key_page"},
+              {"key": "buscar_keys", "label": "Buscar Keys", "route": None}
+            ]
+          },
+          {
+            "key": "hsh",
+            "label": "HSH",
+            "items": [
+              {"key": "hsh_crear_tag", "label": "Crear Tag", "route": None},
+              {"key": "hsh_cambiar_key", "label": "Cambiar Key", "route": None},
+              {"key": "hsh_cambiar_tag", "label": "Cambiar Tag", "route": None},
+              {"key": "hsh_eliminar_tag", "label": "Eliminar Tag", "route": None},
+              {"key": "hsh_validar", "label": "Validar", "route": None}
+            ]
+          },
+          {
+            "key": "jobs",
+            "label": "Jobs",
+            "items": [
+              {"key": "jobs_crear", "label": "Crear Señales", "route": None},
+              {"key": "jobs_eliminar", "label": "Eliminar Señales", "route": None},
+              {"key": "jobs_cambiar_nombre", "label": "Cambiar Nombre", "route": None}
+            ]
+          },
+          {
+            "key": "unifilares",
+            "label": "Unifilares",
+            "items": [
+              {"key": "unifilares_validar", "label": "Validar", "route": None}
+            ]
+          },
+          {
+            "key": "pruebas",
+            "label": "Pruebas",
+            "items": [
+              {"key": "pruebas_itcosas_v1", "label": "ITCOSAS v1", "route": None},
+              {"key": "pruebas_itcosas_v2", "label": "ITCOSAS v2", "route": None}
+            ]
+          },
+          {
+            "key": "consultar",
+            "label": "Consultar",
+            "items": [
+              {"key": "consultar_rtu", "label": "Consultar RTU", "route": None}
+            ]
+          }
         ] %}
 
-        <div>
-          <p class="nav-heading">Panel</p>
-          <ul class="nav-list">
-            {% for item in navigation %}
-              <li>
-                <a
-                  href="{{ item.href }}"
-                  class="nav-link {% if active_page == item.key %}is-active{% endif %} {% if item.disabled %}is-disabled{% endif %}"
-                >
-                  {{ item.label }}
-                </a>
-              </li>
-            {% endfor %}
-          </ul>
-        </div>
+        <ul class="nav-accordion">
+          {% for section in nav_sections %}
+            <li class="accordion-item {% if active_section == section.key %}is-open{% endif %}">
+              <button
+                class="accordion-trigger"
+                data-section="{{ section.key }}"
+                type="button"
+              >
+                {{ section.label }}
+                <span class="accordion-arrow"></span>
+              </button>
+              <ul class="accordion-panel">
+                {% for option in section['items'] %}
+                  <li>
+                    {% set disabled = option['route'] is none %}
+                    {% set href = (not disabled) and request.url_for(option['route']) %}
+                    <a
+                      href="{{ href if href else 'javascript:void(0);' }}"
+                      class="accordion-link {% if active_page == option['key'] %}is-active{% endif %} {% if disabled %}is-disabled{% endif %}"
+                      {% if disabled %}aria-disabled="true"{% endif %}
+                    >
+                      {{ option['label'] }}
+                    </a>
+                  </li>
+                {% endfor %}
+              </ul>
+            </li>
+          {% endfor %}
+        </ul>
       </div>
 
       <div class="sidebar-footer">
@@ -69,5 +127,6 @@
       </main>
     </div>
   </div>
+  <script src="{{ url_for('static', path='js/sidebar.js') }}"></script>
 </body>
 </html>

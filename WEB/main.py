@@ -5,9 +5,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import RedirectResponse
 
-# --- Importa tus rutas ---
-from routes import login_routes, importar_routes, convertir_routes, menu_routes
-
 # ============================================================
 # CONFIGURACIÓN DE RUTAS BASE
 # ============================================================
@@ -20,6 +17,9 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "AutoADA"))
 if AUTOADA_DIR not in sys.path:
     sys.path.insert(0, AUTOADA_DIR)
+
+# --- Importa tus rutas ---
+from routes import login_routes, importar_routes, convertir_routes, menu_routes, buscar_routes
 
 # ============================================================
 # CREACIÓN DE LA APP
@@ -40,6 +40,7 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 app.include_router(login_routes.router)
 app.include_router(importar_routes.router)
 app.include_router(convertir_routes.router)
+app.include_router(buscar_routes.router)
 app.include_router(menu_routes.router)
 
 # ============================================================

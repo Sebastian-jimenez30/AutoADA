@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="content-card content-card--wide">
+  <header class="content-card__header">
+    <h2>Buscar Key</h2>
+    <p>
+      Ingresa la key (o conjunto de keys) que deseas localizar. Puedes usar comodines
+      con <code>%</code> para búsquedas parciales. Si marcas “Actualizar información” la
+      aplicación descargará y convertirá los datos SCADA, HSH y ODS antes de ejecutar la búsqueda.
+    </p>
+  </header>
+
+  <form id="buscarKeyForm" class="buscar-form">
+    <div class="form-grid">
+      <div class="form-field">
+        <label for="empresa">Empresa</label>
+        <select id="empresa" name="empresa" required>
+          <option value="" disabled selected>Selecciona la empresa</option>
+          {% for empresa in empresas %}
+            <option value="{{ empresa }}">{{ empresa }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label for="dominio">Dominio</label>
+        <select id="dominio" name="dominio" required>
+          <option value="" disabled selected>Selecciona el dominio</option>
+          {% for dominio in dominios %}
+            <option value="{{ dominio }}">{{ dominio }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="form-field checkbox-field form-field--full">
+        <label for="actualizar">
+          <input type="checkbox" id="actualizar" name="actualizar" value="1">
+          Actualizar información antes de buscar
+        </label>
+        <span class="field-hint">
+          Ejecuta importar_all y Convertir_all para sincronizar los datos locales antes de buscar.
+        </span>
+      </div>
+
+      <div class="form-field form-field--full">
+        <label for="keys">Key(s) a buscar</label>
+        <input
+          type="text"
+          id="keys"
+          name="keys"
+          placeholder="Ej: 12345.67, 23456.78, 34567.%"
+          required
+        >
+        <span class="field-hint">
+          Separa múltiples keys con comas. Se aceptan comodines con el símbolo %.
+        </span>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="buscarKeyBtn">Buscar</button>
+      <button type="button" class="btn btn-secondary" id="limpiarLogBtn">Limpiar consola</button>
+    </div>
+  </form>
+
+  <section class="log-section">
+    <div class="log-header">
+      <h3>Consola del proceso</h3>
+      <span id="logStatus" class="log-status">En espera</span>
+    </div>
+    <pre class="log-output" id="logOutput"></pre>
+  </section>
+
+  <div id="resultMessage" class="result-message"></div>
+</section>
+
+<script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+{% endblock %}
