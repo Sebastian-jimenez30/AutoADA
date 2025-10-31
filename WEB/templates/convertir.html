@@ -1,15 +1,49 @@
 {% extends "base.html" %}
-{% block content %}
-  <h2>Convertir Datos</h2>
 
-  <form method="post" action="/convertir">
-    <label>Empresa:</label>
-    <input type="text" name="empresa" placeholder="Ej: ITCO" required>
-    <button type="submit">Iniciar Conversión</button>
+{% block content %}
+<section class="content-card">
+  <div>
+    <h2>Convertir datos</h2>
+    <p>
+      Lanza el pipeline de conversión para generar reportes y salidas operativas a partir de los datos
+      importados. Selecciona la empresa y el modo requerido antes de continuar.
+    </p>
+  </div>
+
+  <form method="post" action="/convertir" class="form-grid">
+    <div class="form-field">
+      <label for="empresa">Empresa</label>
+      <input
+        type="text"
+        id="empresa"
+        name="empresa"
+        placeholder="Ej: ITCO"
+        value="{{ empresa or '' }}"
+        required
+      >
+    </div>
+    <div class="form-field" style="max-width: 260px;">
+      <label for="modo">Modo</label>
+      <select id="modo" name="modo">
+        <option value="Buscar_keys" {% if modo == "Buscar_keys" %}selected{% endif %}>Buscar Keys</option>
+        <option value="Validar_HSH" {% if modo == "Validar_HSH" %}selected{% endif %}>Validar HSH</option>
+        <option value="jobs" {% if modo == "jobs" %}selected{% endif %}>Jobs</option>
+        <option value="unifilares" {% if modo == "unifilares" %}selected{% endif %}>Unifilares</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Iniciar conversión</button>
+      <a href="/menu" class="btn btn-secondary">Volver al panel</a>
+    </div>
   </form>
 
   {% if result %}
-    <h3>Resultado:</h3>
-    <pre>{{ result }}</pre>
+    <div class="log-output">{{ result }}</div>
+  {% else %}
+    <div class="empty-state">
+      <strong>Conversión pendiente</strong>
+      <p>Ejecuta el proceso para ver el log completo y los comandos disparados.</p>
+    </div>
   {% endif %}
+</section>
 {% endblock %}

@@ -2,15 +2,72 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>{{ title if title else "AutoADA Web" }}</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ page_title if page_title else "AutoADA Web" }}</title>
+  <link rel="icon" href="{{ url_for('static', path='img/LogoDOT.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
 </head>
 <body>
-  <header>
-    <h1>AutoADA Web</h1>
-  </header>
-  <main>
-    {% block content %}{% endblock %}
-  </main>
+  <div class="app-shell">
+    <aside class="shell-sidebar">
+      <div class="sidebar-brand">
+        <img src="{{ url_for('static', path='img/LogoDOT_blanco.png') }}" alt="Logo DOT" class="brand-emblem">
+        <div>
+          <p class="brand-title">Automatismo DOT</p>
+          <p class="brand-subtitle">Intercolombia</p>
+        </div>
+      </div>
+
+      <div class="nav-groups">
+        {% set navigation = [
+          {"key": "inicio", "label": "Inicio", "href": "/menu"},
+          {"key": "importar", "label": "Importar", "href": "/importar"},
+          {"key": "convertir", "label": "Convertir", "href": "/convertir"},
+          {"key": "hsh", "label": "HSH", "href": "#", "disabled": True},
+          {"key": "jobs", "label": "Jobs", "href": "#", "disabled": True},
+          {"key": "unifilares", "label": "Unifilares", "href": "#", "disabled": True},
+          {"key": "pruebas", "label": "Pruebas PyP", "href": "#", "disabled": True},
+          {"key": "consultar", "label": "Consultar", "href": "#", "disabled": True}
+        ] %}
+
+        <div>
+          <p class="nav-heading">Panel</p>
+          <ul class="nav-list">
+            {% for item in navigation %}
+              <li>
+                <a
+                  href="{{ item.href }}"
+                  class="nav-link {% if active_page == item.key %}is-active{% endif %} {% if item.disabled %}is-disabled{% endif %}"
+                >
+                  {{ item.label }}
+                </a>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <a href="/logout" class="logout-btn">Cerrar sesión</a>
+      </div>
+    </aside>
+
+    <div class="shell-main">
+      <header class="shell-header">
+        <div class="header-text">
+          <p class="header-breadcrumb">AutoADA Web</p>
+          <h1>{{ page_title if page_title else "Panel Operativo" }}</h1>
+          {% if page_subtitle %}
+            <p class="header-description">{{ page_subtitle }}</p>
+          {% endif %}
+        </div>
+        <img src="{{ url_for('static', path='img/ISAlogotipo.png') }}" alt="Logo ISA" class="header-logo">
+      </header>
+
+      <main class="shell-content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
 </body>
 </html>

@@ -1,21 +1,75 @@
-{% extends "base.html" %}
-{% block content %}
-<h2>Inicio de Sesión</h2>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iniciar sesión | AutoADA Web</title>
+  <link rel="icon" href="{{ url_for('static', path='img/LogoDOT.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/login.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-container">
+    <aside class="login-brand">
+      <div class="brand-top">
+        <img src="{{ url_for('static', path='img/LogoDOT_blanco.png') }}" alt="Logo DOT" class="brand-logo">
+        <h1 class="brand-title">Automatismo DOT</h1>
+        <p class="brand-motto">
+          Sincronizamos los datos SCADA, HSH y ODS para que puedas ejecutar tus tareas críticas
+          con la información más reciente y confiable.
+        </p>
+      </div>
+      <div class="brand-bottom">
+        <h2>Funciones Clave</h2>
+        <ul class="brand-features">
+          <li>Importaciones automatizadas desde servidores seguros.</li>
+          <li>Conversión y validación de datasets en un solo lugar.</li>
+          <li>Reportes listos para los equipos de operaciones.</li>
+        </ul>
+        <div class="brand-footer">
+          <img src="{{ url_for('static', path='img/ISAlogotipo.png') }}" alt="Logo ISA" class="brand-isa">
+        </div>
+      </div>
+    </aside>
 
-<form method="post" action="/login">
-  <label>Usuario:</label>
-  <input type="text" name="usuario" required>
+    <section class="login-card" aria-label="Formulario de autenticación">
+      <header class="login-header">
+        <h2>Acceso Seguro</h2>
+        <p>Ingresa tu usuario corporativo y la clave del vault para desbloquear AutoADA.</p>
+      </header>
 
-  <label>Clave del Vault:</label>
-  <input type="password" name="clave" required>
+      <form method="post" action="/login" class="login-form" novalidate>
+        <div class="form-group">
+          <label for="usuario">Usuario</label>
+          <input type="text" id="usuario" name="usuario" placeholder="usuario@empresa" required autocomplete="username">
+        </div>
 
-  <button type="submit">Desbloquear Vault</button>
-</form>
+        <div class="form-group password-group">
+          <label for="clave">Clave del Vault</label>
+          <input type="password" id="clave" name="clave" placeholder="••••••••" required autocomplete="current-password">
+          <button type="button" class="toggle-password" id="togglePassword" aria-label="Mostrar u ocultar clave">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"></path>
+              <circle cx="12" cy="12" r="3"></circle>
+            </svg>
+          </button>
+        </div>
 
-{% if error %}
-  <p style="color:red;">{{ error }}</p>
-{% endif %}
-{% if success %}
-  <p style="color:green;">Vault desbloqueado correctamente.</p>
-{% endif %}
-{% endblock %}
+        {% if error %}
+        <p class="alert error" role="alert">{{ error }}</p>
+        {% endif %}
+        {% if success %}
+        <p class="alert success" role="status">{{ success }}</p>
+        {% endif %}
+
+        <button type="submit" class="btn-primary">Desbloquear Vault</button>
+      </form>
+
+      <footer class="login-support">
+        <p>¿Problemas con el acceso? Contacta al equipo DOT Intercolombia.</p>
+      </footer>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', path='js/login.js') }}"></script>
+</body>
+</html>

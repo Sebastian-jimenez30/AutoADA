@@ -1,11 +1,43 @@
 {% extends "base.html" %}
-{% block content %}
-  <h2>Menú principal</h2>
-  <p>Selecciona una acción:</p>
 
-  <div class="menu">
-    <a href="/importar" class="menu-btn">📥 Importar datos</a>
-    <a href="/convertir" class="menu-btn">⚙️ Convertir datos</a>
-    <a href="/logout" class="menu-btn logout">🔒 Cerrar sesión</a>
+{% block content %}
+<section class="content-panel">
+  <h2 class="panel-title">¡Bienvenido a AutoADA!</h2>
+  <p class="panel-subtitle">
+    Esta aplicación opera con información proveniente de servidores externos.
+    Sincronizamos los datos de SCADA, HSH y ODS para que puedas realizar tus tareas con la mejor
+    información disponible.
+  </p>
+
+  <div class="status-grid">
+    <article class="status-card">
+      <span>SCADA</span>
+      <strong>Sin datos locales</strong>
+      <p>Ejecuta una actualización para traer la última captura del servidor SCADA correspondiente.</p>
+    </article>
+    <article class="status-card">
+      <span>HSH</span>
+      <strong>Sin datos locales</strong>
+      <p>Importa las colecciones requeridas del Historial de Señales para habilitar las validaciones.</p>
+    </article>
+    <article class="status-card">
+      <span>ODS TXT</span>
+      <strong>Sin datos locales</strong>
+      <p>Descarga los archivos ODS necesarios antes de ejecutar conversiones o reportes especializados.</p>
+    </article>
   </div>
+
+  <div class="btn-group">
+    <a href="/importar" class="btn btn-primary">Actualizar datos</a>
+    <button type="button" class="btn btn-secondary">Refrescar estado</button>
+  </div>
+
+  <div class="empty-state" style="margin-top: 40px;">
+    <strong>Recuerda</strong>
+    <p>
+      Los procesos de importación pueden tardar varios minutos dependiendo de la conectividad.
+      Puedes continuar trabajando en otras tareas mientras se ejecutan.
+    </p>
+  </div>
+</section>
 {% endblock %}

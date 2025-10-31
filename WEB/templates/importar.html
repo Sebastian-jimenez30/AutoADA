@@ -1,15 +1,40 @@
 {% extends "base.html" %}
-{% block content %}
-  <h2>Importar Datos</h2>
 
-  <form method="post" action="/importar">
-    <label>Empresa:</label>
-    <input type="text" name="empresa" placeholder="Ej: ITCO" required>
-    <button type="submit">Iniciar Importación</button>
+{% block content %}
+<section class="content-card">
+  <div>
+    <h2>Importar datos</h2>
+    <p>
+      Ejecuta el flujo de importación para sincronizar los datasets SCADA, HSH y ODS con los servidores
+      corporativos. Asegúrate de haber desbloqueado el vault antes de iniciar el proceso.
+    </p>
+  </div>
+
+  <form method="post" action="/importar" class="form-grid">
+    <div class="form-field">
+      <label for="empresa">Empresa</label>
+      <input
+        type="text"
+        id="empresa"
+        name="empresa"
+        placeholder="Ej: ITCO"
+        value="{{ empresa or '' }}"
+        required
+      >
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Iniciar importación</button>
+      <a href="/menu" class="btn btn-secondary">Volver al panel</a>
+    </div>
   </form>
 
   {% if result %}
-    <h3>Resultado:</h3>
-    <pre>{{ result }}</pre>
+    <div class="log-output">{{ result }}</div>
+  {% else %}
+    <div class="empty-state">
+      <strong>Sin ejecuciones recientes</strong>
+      <p>El resultado del comando aparecerá aquí una vez se complete la importación.</p>
+    </div>
   {% endif %}
+</section>
 {% endblock %}

@@ -25,7 +25,7 @@ def ejecutar_importar(empresa: str):
     env = VaultService.build_env()
 
     try:
-        # 🔥 Importante: cwd debe ser una cadena, no lista
+        # IMPORTANTE: cwd debe ser una cadena, no lista
         result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(AUTOADA_DIR), env=env)
         output = result.stdout + "\n" + result.stderr
         return f"Comando ejecutado: {' '.join(cmd)}\n\nSalida:\n{output}"
