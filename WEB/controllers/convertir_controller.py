@@ -9,7 +9,7 @@ def ejecutar_convertir(empresa: str, tipo: str = "Buscar_keys"):
 
     print(f"[DEBUG] AUTOADA_DIR = {AUTOADA_DIR} (type={type(AUTOADA_DIR)})")
 
-    cmd = build_cmd("scripts.Convertir_all", [empresa, tipo])
+    cmd = build_cmd("scripts.Convertir_all", empresa, tipo)
     env = VaultService.build_env()
 
     try:
