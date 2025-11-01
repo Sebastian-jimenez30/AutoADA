@@ -33,7 +33,7 @@ def _validar_keys(cadena: str) -> Tuple[list[str], list[str]]:
     for key in keys:
         if "%" in key:
             validas.append(key)
-        elif len(key) == 8 and key[:5].isdigit() and key[6:].isdigit() and key[5] == ".":
+        elif len(key) == 8 and key[:5].isdigit() and key[6:].isdigit():
             validas.append(key)
         else:
             invalidas.append(key)
@@ -168,4 +168,3 @@ def buscar_key_pipeline(
         yield _result_line("SUCCESS", msg, output_file)
     else:
         yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
-
