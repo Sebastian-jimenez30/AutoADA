@@ -42,8 +42,10 @@ a {
 
 .app-shell {
   display: flex;
+  align-items: stretch;    /* asegura alturas iguales */
   width: 100%;
-  min-height: 100vh;
+  min-height: 100vh;       /* cubre la pantalla completa */
+  height: auto;            /* permite crecer si el contenido es más largo */
 }
 
 .shell-sidebar {
@@ -56,6 +58,9 @@ a {
   position: relative;
   z-index: 2;
   box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.04);
+  min-height: 100vh;   /* garantiza cubrir la pantalla completa */
+  height: auto;        /* le permite crecer con el contenido */
+  overflow-y: auto; 
 }
 
 .sidebar-brand {
@@ -93,6 +98,20 @@ a {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.3) transparent;
+}
+
+.nav-groups::-webkit-scrollbar {
+  width: 8px;
+}
+.nav-groups::-webkit-scrollbar-thumb {
+  background-color: rgba(255,255,255,0.3);
+  border-radius: 4px;
+}
+.nav-groups::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255,255,255,0.5);
 }
 
 .nav-heading {
@@ -236,13 +255,20 @@ a {
 .shell-header {
   background: var(--surface);
   box-shadow: var(--shadow-sm);
-  padding: 32px 48px;
+  padding: 20px 36px; 
   display: flex;
   align-items: center;
   justify-content: space-between;
   position: sticky;
   top: 0;
   z-index: 3;
+}
+
+.shell-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
 }
 
 .header-text {
@@ -259,13 +285,6 @@ a {
   color: var(--text-muted);
 }
 
-.shell-header h1 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--primary);
-}
-
 .header-description {
   margin: 0;
   font-size: 15px;
@@ -280,7 +299,7 @@ a {
 
 .shell-content {
   flex: 1;
-  padding: 48px;
+  padding: 32px 48px;
   overflow-y: auto;
   position: relative;
 }
@@ -487,7 +506,8 @@ a {
 
 .form-actions {
   display: flex;
-  gap: 14px;
+  margin-top: 18px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
@@ -647,3 +667,4 @@ a {
     padding: 28px 24px 36px;
   }
 }
+

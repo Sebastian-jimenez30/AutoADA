@@ -1,0 +1,323 @@
+/* ========== BUSCAR KEY ========== */
+.buscarkey-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --- Encabezado --- */
+.buscarkey-header h2 {
+  font-size: 28px;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.buscarkey-header p {
+  color: var(--text-muted);
+  max-width: 720px;
+  line-height: 1.6;
+}
+
+/* --- Tarjetas (paneles) --- */
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  padding: 32px 36px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* --- Formulario --- */
+.buscarkey-form h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--primary);
+  border-bottom: 1px solid rgba(21,35,59,0.08);
+  padding-bottom: 8px;
+}
+
+/* === NUEVO LAYOUT GENERAL === */
+.form-layout {
+  display: grid;
+  grid-template-columns: 1fr 180px; /* izquierda y derecha (botones) */
+  gap: 28px;
+  align-items: start;
+}
+
+.form-left {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* fila superior con empresa, dominio y checkbox */
+.form-row-top {
+  display: grid;
+  grid-template-columns: 210px 210px auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.form-field select {
+  height: 42px;        /* controla la altura */
+  font-size: 15px;     /* texto interno */
+  width: 100%;         /* ocupa todo el espacio del grid */
+  max-width: 220px;    /* puedes reducirlo si se ve muy largo */
+}
+
+/* columna derecha (botones) */
+.form-right {
+  display: flex;
+  flex-direction: column;
+  margin-top: 40px;
+  align-items: stretch;
+  gap: 14px; /* espacio entre botones */
+}
+
+/* agrandar el checkbox */
+.checkbox-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+   margin-top: 5px;
+}
+
+/* input de key */
+.form-field--full {
+  display: flex;
+  justify-content: center;
+}
+.form-field--full input {
+  width: 70%;
+  max-width: 320px;
+}
+
+/* --- Campos generales --- */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-field label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.form-field input,
+.form-field select {
+  border: 1px solid #d4d9e1;
+  border-radius: 10px;
+  background: #f9fafc;
+  padding: 12px 14px;
+  font-size: 15px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(11,79,148,0.18);
+  background: #fff;
+}
+
+/* --- Consola --- */
+.buscarkey-console {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(21,35,59,0.08);
+  padding-bottom: 8px;
+}
+
+.console-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--primary);
+}
+
+.console-status {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.console-status[data-variant="SUCCESS"] {
+  color: #166534;
+}
+
+.console-status[data-variant="ERROR"] {
+  color: #b91c1c;
+}
+
+.console-output {
+  margin: 0;
+  background: #0d1e34;
+  color: #e5ecff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  min-height: 220px;
+  max-height: 400px;
+  overflow-y: auto;
+  box-shadow: 0 16px 32px rgba(13,30,52,0.3);
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.console-result {
+  display: none;
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.console-result.success {
+  display: block;
+  background: rgba(34,197,94,0.12);
+  color: #166534;
+  border: 1px solid rgba(34,197,94,0.35);
+}
+
+.console-result.error {
+  display: block;
+  background: rgba(248,113,113,0.12);
+  color: #b91c1c;
+  border: 1px solid rgba(248,113,113,0.35);
+}
+
+/* --- Responsivo --- */
+@media (max-width: 900px) {
+  .form-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .form-row-top {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .form-right {
+    flex-direction: row;
+    justify-content: center;
+    margin-top: 8px;
+  }
+}
+
+@media (max-width: 640px) {
+  .card {
+    padding: 24px;
+  }
+}
+
+/* === BOTÓN DE INFORMACIÓN === */
+.buscarkey-header__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.info-btn {
+  background: rgba(11,79,148,0.15);
+  color: var(--primary);
+  border: none;
+  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.25s ease, transform 0.1s ease;
+}
+
+.info-btn:hover {
+  background: rgba(11,79,148,0.25);
+  transform: scale(1.05);
+}
+
+/* === MODAL DE INFORMACIÓN === */
+.info-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  backdrop-filter: blur(2px);
+}
+
+.info-modal.is-visible {
+  display: flex;
+}
+
+.info-modal__content {
+  background: var(--surface);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  width: 90%;
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 28px 32px;
+  animation: modalFadeIn 0.25s ease;
+}
+
+.info-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.info-modal__header h3 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--primary);
+}
+
+.info-modal__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.info-modal__close:hover {
+  color: var(--primary);
+}
+
+.info-modal__body h4 {
+  margin-top: 18px;
+  margin-bottom: 8px;
+  font-size: 16px;
+  color: var(--primary);
+}
+
+.info-modal__body ul {
+  margin: 0 0 12px 20px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.info-modal__body p {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

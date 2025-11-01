@@ -1,79 +1,145 @@
 {% extends "base.html" %}
 
 {% block content %}
-<section class="content-card content-card--wide">
-  <header class="content-card__header">
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+  <div class="buscarkey-header__title">
     <h2>Buscar Key</h2>
-    <p>
-      Ingresa la key (o conjunto de keys) que deseas localizar. Puedes usar comodines
-      con <code>%</code> para búsquedas parciales. Si marcas “Actualizar información” la
-      aplicación descargará y convertirá los datos SCADA, HSH y ODS antes de ejecutar la búsqueda.
-    </p>
+    <button type="button" class="info-btn" id="infoBtn" title="Más información">
+      <span>?</span>
+    </button>
+  </div>
   </header>
 
-  <form id="buscarKeyForm" class="buscar-form">
-    <div class="form-grid">
-      <div class="form-field">
-        <label for="empresa">Empresa</label>
-        <select id="empresa" name="empresa" required>
-          <option value="" disabled selected>Selecciona la empresa</option>
-          {% for empresa in empresas %}
-            <option value="{{ empresa }}">{{ empresa }}</option>
-          {% endfor %}
-        </select>
+  <!-- Modal informativo -->
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda — Buscar Key</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
       </div>
 
-      <div class="form-field">
-        <label for="dominio">Dominio</label>
-        <select id="dominio" name="dominio" required>
-          <option value="" disabled selected>Selecciona el dominio</option>
-          {% for dominio in dominios %}
-            <option value="{{ dominio }}">{{ dominio }}</option>
-          {% endfor %}
-        </select>
-      </div>
+      <div class="info-modal__body">
+        <p>
+          Esta herramienta te permite localizar una o varias <strong>keys</strong> dentro de los datasets más recientes.
+        </p>
 
-      <div class="form-field checkbox-field form-field--full">
-        <label for="actualizar">
-          <input type="checkbox" id="actualizar" name="actualizar" value="1">
-          Actualizar información antes de buscar
-        </label>
-        <span class="field-hint">
-          Ejecuta importar_all y Convertir_all para sincronizar los datos locales antes de buscar.
-        </span>
-      </div>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa:</strong> selecciona la empresa objetivo.</li>
+          <li><strong>Dominio:</strong> define el entorno de origen (SCADA, HSH, ODS, etc.).</li>
+          <li><strong>Actualizar información:</strong> si está activado, se ejecutarán los procesos <code>importar_all</code> y <code>convertir_all</code> antes de buscar.</li>
+          <li><strong>Key(s) a buscar:</strong> admite múltiples keys separadas por comas. Puedes usar el símbolo <code>%</code> como comodín.</li>
+        </ul>
 
-      <div class="form-field form-field--full">
-        <label for="keys">Key(s) a buscar</label>
-        <input
-          type="text"
-          id="keys"
-          name="keys"
-          placeholder="Ej: 12345.67, 23456.78, 34567.%"
-          required
-        >
-        <span class="field-hint">
-          Separa múltiples keys con comas. Se aceptan comodines con el símbolo %.
-        </span>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Genera el archivo <code>Find_Key.xlsx</code> con las coincidencias encontradas.</li>
+          <li>Registra la ejecución y resultados en la <strong>consola del proceso</strong>.</li>
+        </ul>
+
+        <h4>Restricciones</h4>
+        <ul>
+          <li>No permite ejecutar búsquedas simultáneas.</li>
+          <li>No modifica datos en los sistemas origen.</li>
+          <li>Requiere conexión estable al entorno ODBC configurado.</li>
+        </ul>
       </div>
     </div>
+  </div>
 
-    <div class="form-actions">
-      <button type="submit" class="btn btn-primary" id="buscarKeyBtn">Buscar</button>
-      <button type="button" class="btn btn-secondary" id="limpiarLogBtn">Limpiar consola</button>
-    </div>
-  </form>
+  <!-- Panel de formulario -->
+  <section class="buscarkey-form card">
+    <h3>Parámetros de búsqueda</h3>
+    <form id="buscarKeyForm">
+      <div class="form-layout">
+        <!-- COLUMNA IZQUIERDA -->
+        <div class="form-left">
+          <div class="form-row-top">
+            <div class="form-field">
+              <label for="empresa">Empresa</label>
+              <select id="empresa" name="empresa" required>
+                <option value="" disabled selected>Selecciona la empresa</option>
+                {% for empresa in empresas %}
+                  <option value="{{ empresa }}">{{ empresa }}</option>
+                {% endfor %}
+              </select>
+            </div>
 
-  <section class="log-section">
-    <div class="log-header">
-      <h3>Consola del proceso</h3>
-      <span id="logStatus" class="log-status">En espera</span>
-    </div>
-    <pre class="log-output" id="logOutput"></pre>
+            <div class="form-field">
+              <label for="dominio">Dominio</label>
+              <select id="dominio" name="dominio" required>
+                <option value="" disabled selected>Selecciona el dominio</option>
+                {% for dominio in dominios %}
+                  <option value="{{ dominio }}">{{ dominio }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-field checkbox-field">
+              <label>
+                <input type="checkbox" id="actualizar" name="actualizar" value="1">
+                Actualizar información
+              </label>
+            </div>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="keys">Key(s) a buscar</label>
+            <input
+              type="text"
+              id="keys"
+              name="keys"
+              placeholder="Ej: 12345.67, 23456.78, 34567.%"
+              required
+            >
+          </div>
+        </div>
+
+        <!-- COLUMNA DERECHA -->
+        <div class="form-right">
+          <button type="submit" class="btn btn-primary" id="buscarKeyBtn">
+            Buscar
+          </button>
+          <button type="button" class="btn btn-secondary" id="limpiarLogBtn">
+            Limpiar consola
+          </button>
+        </div>
+      </div>
+    </form>
   </section>
 
-  <div id="resultMessage" class="result-message"></div>
+  <!-- Panel de consola -->
+  <section class="buscarkey-console card">
+    <div class="console-header">
+      <h3>Consola del proceso</h3>
+      <span id="logStatus" class="console-status">En espera</span>
+    </div>
+    <pre class="console-output" id="logOutput"></pre>
+    <div id="resultMessage" class="console-result"></div>
+  </section>
 </section>
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn.addEventListener("click", () => {
+    infoModal.classList.add("is-visible");
+  });
+
+  closeInfoBtn.addEventListener("click", () => {
+    infoModal.classList.remove("is-visible");
+  });
+
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
+
 {% endblock %}
