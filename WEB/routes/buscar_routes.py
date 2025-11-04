@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -40,8 +40,8 @@ def ejecutar_buscar_key(
 
 
 @router.get("/buscar/key/result/data")
-def obtener_resultado_buscar_key():
-    data = buscar_controller.load_result_preview()
+def obtener_resultado_buscar_key(sheet: str | None = Query(None)):
+    data = buscar_controller.load_result_preview(sheet=sheet)
     if data is None:
         raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
     # Sanitizar ruta antes de exponerla

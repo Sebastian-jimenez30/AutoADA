@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from typing import Any, Generator, Iterable, Tuple
+from typing import Any, Generator, Iterable, Sequence, Tuple
 
 from openpyxl import load_workbook
 
@@ -186,7 +186,7 @@ def get_result_path() -> str | None:
     return _resolve_result_path()
 
 
-def load_result_preview(limit: int = 500) -> dict[str, Any] | None:
+def load_result_preview(limit: int = 500, sheet: str | None = None) -> dict[str, Any] | None:
     """
     Lee el archivo de resultados y devuelve una vista previa tabular.
     limit controla cuántas filas se devuelven (resto de filas se indica con has_more).
@@ -197,13 +197,39 @@ def load_result_preview(limit: int = 500) -> dict[str, Any] | None:
 
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
-        sheet = workbook.active
-        rows_iter = sheet.iter_rows(values_only=True)
+        sheet_names: Sequence[str] = tuple(workbook.sheetnames)
+        if not sheet_names:
+            return {
+                "sheets": [],
+                "active_sheet": None,
+                "columns": [],
+                "rows": [],
+                "total": 0,
+                "has_more": False,
+                "limit": limit,
+                "path": path,
+            }
+
+        active_sheet_name = sheet or sheet_names[0]
+        if active_sheet_name not in sheet_names:
+            active_sheet_name = sheet_names[0]
+
+        worksheet = workbook[active_sheet_name]
+        rows_iter = worksheet.iter_rows(values_only=True)
 
         try:
             headers_raw = next(rows_iter)
         except StopIteration:
-            return {"columns": [], "rows": [], "total": 0, "has_more": False}
+            return {
+                "sheets": list(sheet_names),
+                "active_sheet": active_sheet_name,
+                "columns": [],
+                "rows": [],
+                "total": 0,
+                "has_more": False,
+                "limit": limit,
+                "path": path,
+            }
 
         headers = []
         for idx, header in enumerate(headers_raw or (), start=1):
@@ -231,11 +257,17 @@ def load_result_preview(limit: int = 500) -> dict[str, Any] | None:
                 has_more = True
                 # continue enumerating to know total rows
                 # but avoid storing beyond limit
+        # Ajustar total real (si no hubo filas, total=0)
+        total_rows = total
+        if total_rows == 0 and preview_rows:
+            total_rows = len(preview_rows)
 
         return {
+            "sheets": list(sheet_names),
+            "active_sheet": active_sheet_name,
             "columns": headers,
             "rows": preview_rows,
-            "total": total,
+            "total": total_rows,
             "has_more": has_more,
             "limit": limit,
             "path": path,

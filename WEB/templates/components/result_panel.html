@@ -5,14 +5,18 @@
     body_id="resultTableBody",
     empty_id="resultEmptyState",
     download_id="resultDownloadBtn",
-    meta_id="resultMeta"
+    meta_id="resultMeta",
+    sheet_tabs_id="resultSheetTabs"
 ) -%}
 <div id="{{ wrapper_id }}" class="result-panel" hidden>
   <div class="result-toolbar">
-    <button type="button" class="btn btn-secondary" id="{{ download_id }}" disabled>
-      Descargar Excel
-    </button>
-    <span id="{{ meta_id }}" class="result-meta"></span>
+    <div class="result-sheet-tabs" id="{{ sheet_tabs_id }}" role="tablist"></div>
+    <div class="result-toolbar-actions">
+      <button type="button" class="btn btn-secondary" id="{{ download_id }}" disabled>
+        Descargar Excel
+      </button>
+      <span id="{{ meta_id }}" class="result-meta"></span>
+    </div>
   </div>
   <div class="result-table-wrapper">
     <table id="{{ table_id }}" class="result-table">

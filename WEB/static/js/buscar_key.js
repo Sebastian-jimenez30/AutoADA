@@ -16,9 +16,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultBody = document.getElementById("resultTableBody");
   const resultEmpty = document.getElementById("resultEmptyState");
   const resultMeta = document.getElementById("resultMeta");
+  const sheetTabsContainer = document.getElementById("resultSheetTabs");
   const downloadBtn = document.getElementById("resultDownloadBtn");
 
-  let resultsCache = null;
+  const sheetCache = new Map();
+  let availableSheets = [];
+  let activeSheet = null;
+  let latestResult = null;
   let resultsNeedsRefresh = true;
   let resultsLoading = false;
 
@@ -40,8 +44,11 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const resetResultsView = () => {
-    resultsCache = null;
+    latestResult = null;
     resultsNeedsRefresh = true;
+    activeSheet = null;
+    availableSheets = [];
+    sheetCache.clear();
     if (!resultPanel) return;
     resultHead.innerHTML = "";
     resultBody.innerHTML = "";
@@ -52,14 +59,71 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultMeta) {
       resultMeta.textContent = "";
     }
+    if (sheetTabsContainer) {
+      sheetTabsContainer.innerHTML = "";
+      sheetTabsContainer.classList.remove("has-tabs");
+    }
     if (downloadBtn) {
       downloadBtn.disabled = true;
       downloadBtn.dataset.href = "";
     }
   };
 
+  const updateSheetTabs = (sheets, active) => {
+    if (!sheetTabsContainer) return;
+    sheetTabsContainer.innerHTML = "";
+    sheetTabsContainer.classList.remove("has-tabs");
+
+    if (!Array.isArray(sheets) || sheets.length <= 1) {
+      return;
+    }
+
+    sheetTabsContainer.classList.add("has-tabs");
+
+    sheets.forEach((name) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "result-sheet-tab";
+      button.dataset.sheet = name;
+      button.textContent = name;
+      const isActive = name === active;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+      button.addEventListener("click", () => {
+        loadResults({ sheet: name, autoActivate: true });
+      });
+      sheetTabsContainer.appendChild(button);
+    });
+  };
+
+  const refreshSheetTabsActiveState = () => {
+    if (!sheetTabsContainer) return;
+    const buttons = sheetTabsContainer.querySelectorAll(".result-sheet-tab");
+    buttons.forEach((button) => {
+      const sheet = button.dataset.sheet;
+      const isActive = sheet === activeSheet;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  };
+
   const renderResults = (data) => {
-    if (!resultPanel) return;
+    if (!resultPanel || !data) return;
+
+    latestResult = data;
+
+    const sheetList = Array.isArray(data?.sheets) ? data.sheets : [];
+    if (sheetList.length) {
+      availableSheets = sheetList;
+    }
+
+    if (data?.active_sheet) {
+      activeSheet = data.active_sheet;
+    }
+
+    updateSheetTabs(availableSheets, activeSheet);
+    refreshSheetTabsActiveState();
 
     const columns = Array.isArray(data?.columns) ? data.columns : [];
     const rows = Array.isArray(data?.rows) ? data.rows : [];
@@ -73,9 +137,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!columns.length || !rows.length) {
       resultPanel.classList.add("is-empty");
       if (resultEmpty) {
-        resultEmpty.textContent = rows.length
-          ? "No hay columnas disponibles para mostrar."
-          : "La búsqueda finalizó sin coincidencias.";
+        const noColumns = rows.length && !columns.length;
+        const sheetLabel = activeSheet ? `Hoja "${activeSheet}"` : "Hoja seleccionada";
+        resultEmpty.textContent = noColumns
+          ? `${sheetLabel} sin columnas visibles.`
+          : `${sheetLabel} no contiene registros para mostrar.`;
       }
     } else {
       resultPanel.classList.remove("is-empty");
@@ -103,11 +169,17 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultMeta) {
       if (rows.length) {
         const plural = rows.length === 1 ? "" : "s";
-        const suffix = hasMore ? ` de ${total} registros (vista previa).` : ` registro${plural}.`;
-        const prefix = hasMore ? `Mostrando ${rows.length}` : `Mostrando ${rows.length}`;
-        resultMeta.textContent = `${prefix}${suffix}`;
+        const suffix = hasMore
+          ? total > rows.length
+            ? ` de ${total} registros (vista previa).`
+            : ` de más de ${rows.length} registros (vista previa).`
+          : ` registro${plural}.`;
+        const prefix = `Mostrando ${rows.length}`;
+        const sheetLabel = activeSheet ? `Hoja: ${activeSheet} — ` : "";
+        resultMeta.textContent = `${sheetLabel}${prefix}${suffix}`;
       } else {
-        resultMeta.textContent = "Sin registros para mostrar.";
+        const sheetLabel = activeSheet ? `Hoja: ${activeSheet}.` : "";
+        resultMeta.textContent = `${sheetLabel} Sin registros para mostrar.`.trim();
       }
     }
 
@@ -118,7 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  const loadResults = async ({ force = false, autoActivate = false } = {}) => {
+  const loadResults = async ({ force = false, autoActivate = false, sheet = null } = {}) => {
     if (!resultPanel) {
       if (autoActivate) activatePanel("results");
       return;
@@ -127,8 +199,13 @@ document.addEventListener("DOMContentLoaded", () => {
       if (autoActivate) activatePanel("results");
       return;
     }
-    if (!force && !resultsNeedsRefresh && resultsCache) {
-      renderResults(resultsCache);
+
+    const targetSheet = sheet ?? activeSheet ?? null;
+    const mustForce = force || resultsNeedsRefresh;
+
+    if (!mustForce && targetSheet && sheetCache.has(targetSheet)) {
+      const cached = sheetCache.get(targetSheet);
+      renderResults(cached);
       if (autoActivate) activatePanel("results");
       return;
     }
@@ -136,16 +213,24 @@ document.addEventListener("DOMContentLoaded", () => {
     resultsLoading = true;
     resultHead.innerHTML = "";
     resultBody.innerHTML = "";
+    if (resultPanel) {
+      resultPanel.classList.add("is-empty");
+    }
+    if (resultEmpty) {
+      resultEmpty.textContent = "Cargando resultados...";
+    }
     if (resultMeta) {
-      resultMeta.textContent = "Cargando resultados...";
+      resultMeta.textContent = "";
     }
     if (downloadBtn) {
       downloadBtn.disabled = true;
       downloadBtn.dataset.href = "";
     }
 
+    const query = targetSheet ? `?sheet=${encodeURIComponent(targetSheet)}` : "";
+
     try {
-      const response = await fetch("/buscar/key/result/data", { cache: "no-store" });
+      const response = await fetch(`/buscar/key/result/data${query}`, { cache: "no-store" });
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error("No se encontraron resultados recientes. Ejecuta una búsqueda para generar un informe.");
@@ -153,26 +238,31 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(`Error al cargar resultados (HTTP ${response.status}).`);
       }
       const data = await response.json();
-      resultsCache = data;
+      if (data?.active_sheet) {
+        sheetCache.set(data.active_sheet, data);
+      }
       resultsNeedsRefresh = false;
       renderResults(data);
     } catch (error) {
-      resultsCache = null;
-      resultsNeedsRefresh = true;
+      latestResult = null;
+      const message =
+        error instanceof Error ? error.message : "No se pudieron cargar los resultados.";
       if (resultPanel) {
         resultPanel.classList.add("is-empty");
       }
       if (resultEmpty) {
-        resultEmpty.textContent =
-          error instanceof Error ? error.message : "No se pudieron cargar los resultados.";
+        resultEmpty.textContent = message;
       }
       if (resultMeta) {
         resultMeta.textContent = "";
       }
-      if (downloadBtn) {
-        downloadBtn.disabled = true;
-        downloadBtn.dataset.href = "";
+      if (sheetTabsContainer) {
+        sheetTabsContainer.innerHTML = "";
+        sheetTabsContainer.classList.remove("has-tabs");
       }
+      sheetCache.clear();
+      availableSheets = [];
+      activeSheet = null;
     } finally {
       resultsLoading = false;
       if (autoActivate) {
@@ -304,7 +394,9 @@ document.addEventListener("DOMContentLoaded", () => {
       showResult(result.status, result.message);
       setStatus(result.status === "SUCCESS" ? "Completado" : "Error", result.status);
       if (result.status === "SUCCESS") {
-        await loadResults({ force: true, autoActivate: true });
+        resultsNeedsRefresh = true;
+        sheetCache.clear();
+        await loadResults({ force: true, autoActivate: true, sheet: null });
       }
     } else {
       showResult("ERROR", "El proceso finalizó sin entregar un resultado final.");
