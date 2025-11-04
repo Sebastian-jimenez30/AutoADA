@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+import os
+
+from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 from controllers import buscar_controller
@@ -35,3 +37,23 @@ def ejecutar_buscar_key(
     force_refresh = bool(actualizar)
     generator = buscar_controller.buscar_key_pipeline(empresa, dominio, keys, force_refresh)
     return StreamingResponse(generator, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/buscar/key/result/data")
+def obtener_resultado_buscar_key():
+    data = buscar_controller.load_result_preview()
+    if data is None:
+        raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
+    # Sanitizar ruta antes de exponerla
+    data["path"] = os.path.basename(data.get("path") or "")
+    data["download_url"] = "/buscar/key/result/download"
+    return data
+
+
+@router.get("/buscar/key/result/download")
+def descargar_resultado_buscar_key():
+    path = buscar_controller.get_result_path()
+    if not path:
+        raise HTTPException(status_code=404, detail="No hay archivo disponible.")
+    filename = os.path.basename(path)
+    return FileResponse(path, filename=filename, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

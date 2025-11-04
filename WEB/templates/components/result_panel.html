@@ -1,0 +1,27 @@
+{% macro result_panel(
+    wrapper_id="resultPanel",
+    table_id="resultTable",
+    head_id="resultTableHead",
+    body_id="resultTableBody",
+    empty_id="resultEmptyState",
+    download_id="resultDownloadBtn",
+    meta_id="resultMeta"
+) -%}
+<div id="{{ wrapper_id }}" class="result-panel" hidden>
+  <div class="result-toolbar">
+    <button type="button" class="btn btn-secondary" id="{{ download_id }}" disabled>
+      Descargar Excel
+    </button>
+    <span id="{{ meta_id }}" class="result-meta"></span>
+  </div>
+  <div class="result-table-wrapper">
+    <table id="{{ table_id }}" class="result-table">
+      <thead id="{{ head_id }}"></thead>
+      <tbody id="{{ body_id }}"></tbody>
+    </table>
+    <div id="{{ empty_id }}" class="result-empty">
+      Aún no hay resultados para mostrar.
+    </div>
+  </div>
+</div>
+{%- endmacro %}

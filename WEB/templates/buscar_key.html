@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
 
 {% block content %}
 <section class="buscarkey-wrapper">
@@ -111,13 +112,38 @@
   </section>
 
   <!-- Panel de consola -->
-  {{ components.process_console(
-    title="Consola del proceso",
-    status_id="logStatus",
-    output_id="logOutput",
-    result_id="resultMessage",
-    wrapper_class="buscarkey-console card"
-  ) }}
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="console" role="tab" aria-selected="true">
+        Consola
+      </button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">
+        Resultados
+      </button>
+    </div>
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta"
+        ) }}
+      </div>
+    </div>
+  </section>
 </section>
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>

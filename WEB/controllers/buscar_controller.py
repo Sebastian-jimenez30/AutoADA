@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from typing import Generator, Iterable, Tuple
+from typing import Any, Generator, Iterable, Tuple
+
+from openpyxl import load_workbook
 
 from services.vault_service import VaultService
 from utils.cli import build_cmd
@@ -16,6 +18,8 @@ AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "AutoADA"))
 SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
 SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
 OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
+RESULT_DIR = os.path.join(OUT_ROOT, "Find_key")
+RESULT_FILE = os.path.join(RESULT_DIR, "Find_Key.xlsx")
 
 
 def get_empresas() -> Iterable[str]:
@@ -167,3 +171,74 @@ def buscar_key_pipeline(
         yield _result_line("SUCCESS", msg, output_file)
     else:
         yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
+
+
+def _resolve_result_path() -> str | None:
+    """Devuelve la ruta del Excel generado si existe."""
+    path = RESULT_FILE
+    if os.path.isfile(path):
+        return path
+    return None
+
+
+def get_result_path() -> str | None:
+    """Ruta pública utilizada por los endpoints para facilitar pruebas."""
+    return _resolve_result_path()
+
+
+def load_result_preview(limit: int = 500) -> dict[str, Any] | None:
+    """
+    Lee el archivo de resultados y devuelve una vista previa tabular.
+    limit controla cuántas filas se devuelven (resto de filas se indica con has_more).
+    """
+    path = _resolve_result_path()
+    if not path:
+        return None
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        sheet = workbook.active
+        rows_iter = sheet.iter_rows(values_only=True)
+
+        try:
+            headers_raw = next(rows_iter)
+        except StopIteration:
+            return {"columns": [], "rows": [], "total": 0, "has_more": False}
+
+        headers = []
+        for idx, header in enumerate(headers_raw or (), start=1):
+            if isinstance(header, str):
+                normalized = header.strip()
+                headers.append(normalized if normalized else f"Columna {idx}")
+            elif header is None:
+                headers.append(f"Columna {idx}")
+            else:
+                headers.append(str(header))
+
+        preview_rows: list[dict[str, Any]] = []
+        total = 0
+        has_more = False
+
+        for total, row in enumerate(rows_iter, start=1):
+            record: dict[str, Any] = {}
+            for col_idx, header in enumerate(headers):
+                value = row[col_idx] if col_idx < len(row) else None
+                record[header] = value
+
+            if total <= limit:
+                preview_rows.append(record)
+            else:
+                has_more = True
+                # continue enumerating to know total rows
+                # but avoid storing beyond limit
+
+        return {
+            "columns": headers,
+            "rows": preview_rows,
+            "total": total,
+            "has_more": has_more,
+            "limit": limit,
+            "path": path,
+        }
+    finally:
+        workbook.close()
