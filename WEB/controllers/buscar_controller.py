@@ -8,7 +8,6 @@ from typing import Generator, Iterable, Tuple
 from services.vault_service import VaultService
 from utils.cli import build_cmd
 from utils.data_checks import find_mode_data_ready
-from utils.paths import runtime_root
 
 from services.server_resolver import ServerResolver
 
@@ -16,7 +15,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "AutoADA"))
 SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
 SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
-RUNTIME_ROOT = runtime_root()
+OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 
 
 def get_empresas() -> Iterable[str]:
@@ -109,7 +108,7 @@ def buscar_key_pipeline(
         yield _result_line("ERROR", "No se pudo construir el entorno. Verifica que el vault esté desbloqueado.")
         return
 
-    ready, details = find_mode_data_ready(None, empresa)
+    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
     needs_update = forzar_actualizacion or (not ready)
     yield f"Datos locales disponibles: {ready} (forzar={forzar_actualizacion})\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
@@ -124,7 +123,7 @@ def buscar_key_pipeline(
         cmd = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
         rc = yield from _run_subprocess_stream(cmd, "BUSCAR", env)
         if rc == 0:
-            output_file = os.path.join(RUNTIME_ROOT, "out", "Find_key", "Find_Key.xlsx")
+            output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
             msg = (
                 f"Búsqueda completada exitosamente. "
                 f"Archivo esperado en: {output_file}"
@@ -160,7 +159,7 @@ def buscar_key_pipeline(
     cmd_buscar = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
     rc_buscar = yield from _run_subprocess_stream(cmd_buscar, "BUSCAR", env)
     if rc_buscar == 0:
-        output_file = os.path.join(RUNTIME_ROOT, "out", "Find_key", "Find_Key.xlsx")
+        output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
         msg = (
             "Búsqueda completada exitosamente tras la actualización. "
             f"Archivo generado en: {output_file}"
