@@ -274,3 +274,104 @@ def load_result_preview(limit: int = 500, sheet: str | None = None) -> dict[str,
         }
     finally:
         workbook.close()
+
+
+def buscar_keys_pipeline(
+    empresa: str,
+    dominio: str,
+    archivo_path: str,
+    archivo_nombre: str | None,
+    forzar_actualizacion: bool,
+) -> Generator[str, None, None]:
+    empresa = (empresa or "").strip().upper()
+    dominio = (dominio or "").strip().upper()
+    archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
+
+    yield (
+        f"Iniciando búsqueda de keys desde archivo para empresa={empresa} dominio={dominio} "
+        f"archivo={archivo_nombre}\n"
+    )
+
+    if not empresa:
+        yield _result_line("ERROR", "Debes seleccionar una empresa válida.")
+        return
+    if not dominio:
+        yield _result_line("ERROR", "Debes seleccionar un dominio válido.")
+        return
+
+    if not archivo_path or not os.path.isfile(archivo_path):
+        yield _result_line("ERROR", "Archivo de keys no disponible o inaccesible.")
+        return
+
+    _, extension = os.path.splitext(archivo_path)
+    extension = (extension or "").lower()
+    if extension not in {".xlsx", ".xlsm", ".xls"}:
+        yield _result_line("ERROR", "El archivo debe ser un Excel (.xlsx, .xlsm, .xls).")
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:  # pragma: no cover
+        yield f"Error cargando variables del vault: {exc}\n"
+        yield _result_line("ERROR", "No se pudo construir el entorno. Verifica que el vault esté desbloqueado.")
+        return
+
+    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
+    needs_update = forzar_actualizacion or (not ready)
+    yield f"Datos locales disponibles: {ready} (forzar={forzar_actualizacion})\n"
+    yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
+
+    usecase = "buscar_keys"
+
+    def _abort(message: str):
+        yield message + "\n"
+        yield _result_line("ERROR", message)
+
+    if not needs_update:
+        cmd = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+        rc = yield from _run_subprocess_stream(cmd, "BUSCAR-ARCHIVO", env)
+        if rc == 0:
+            output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
+            msg = (
+                "Búsqueda completada exitosamente desde archivo. "
+                f"Archivo esperado en: {output_file}"
+            )
+            yield _result_line("SUCCESS", msg, output_file)
+        else:
+            yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
+        return
+
+    servidor = SERVER_RESOLVER.generar_server(empresa, dominio)
+    if not servidor:
+        yield from _abort("No se pudo resolver el servidor para la empresa y dominio seleccionados.")
+        return
+
+    yield f"Actualizando datos desde el servidor '{servidor}' antes de buscar.\n"
+
+    steps = [
+        ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase)),
+        ("CONVERT-SCA", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "sca")),
+        ("IMPORT-HSH", build_cmd("scripts.importar_all", servidor, empresa, "hsh", "--usecase", usecase)),
+        ("CONVERT-HSH", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "hsh")),
+        ("IMPORT-ODS", build_cmd("scripts.importar_all", servidor, empresa, "ods", "--usecase", usecase)),
+        ("CONVERT-ODS", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "ods")),
+        ("CONVERT-ODS_CSV", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "ods_csv")),
+    ]
+
+    for label, cmd in steps:
+        rc = yield from _run_subprocess_stream(cmd, label, env)
+        if rc != 0:
+            yield from _abort(f"El paso {label} finalizó con errores (rc={rc}).")
+            return
+
+    cmd_buscar = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+    rc_buscar = yield from _run_subprocess_stream(cmd_buscar, "BUSCAR-ARCHIVO", env)
+    if rc_buscar == 0:
+        output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
+        msg = (
+            "Búsqueda completada exitosamente tras la actualización. "
+            f"Archivo generado en: {output_file}"
+        )
+        yield _result_line("SUCCESS", msg, output_file)
+    else:
+        yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+import os
+import shutil
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -37,6 +42,69 @@ def ejecutar_buscar_key(
     force_refresh = bool(actualizar)
     generator = buscar_controller.buscar_key_pipeline(empresa, dominio, keys, force_refresh)
     return StreamingResponse(generator, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/buscar/keys", response_class=HTMLResponse, name="buscar_keys_page")
+def buscar_keys_page(request: Request):
+    context = {
+        "request": request,
+        "active_section": "buscar",
+        "active_page": "buscar_keys",
+        "page_title": "Buscar Keys",
+        "page_subtitle": "Procesa un archivo Excel con múltiples keys y genera el reporte Find_Key.xlsx.",
+        "empresas": list(buscar_controller.get_empresas()),
+        "dominios": list(buscar_controller.get_dominios()),
+    }
+    return templates.TemplateResponse("buscar_keys.html", context)
+
+
+@router.post("/buscar/keys/run")
+def ejecutar_buscar_keys(
+    request: Request,
+    empresa: str = Form(...),
+    dominio: str = Form(...),
+    actualizar: str | None = Form(None),
+    archivo: UploadFile = File(...),
+):
+    if not archivo or not archivo.filename:
+        raise HTTPException(status_code=400, detail="Debes subir un archivo Excel válido.")
+
+    extension = Path(archivo.filename).suffix.lower()
+    if extension not in {".xlsx", ".xlsm", ".xls"}:
+        raise HTTPException(status_code=400, detail="El archivo debe ser un Excel (.xlsx, .xlsm, .xls).")
+
+    os.makedirs(buscar_controller.RESULT_DIR, exist_ok=True)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            delete=False, suffix=extension, dir=buscar_controller.RESULT_DIR
+        ) as tmp_file:
+            archivo.file.seek(0)
+            shutil.copyfileobj(archivo.file, tmp_file)
+            tmp_path = tmp_file.name
+    finally:
+        try:
+            archivo.file.close()
+        except Exception:
+            pass
+
+    if not tmp_path or not os.path.exists(tmp_path):
+        raise HTTPException(status_code=500, detail="No fue posible almacenar el archivo para su procesamiento.")
+
+    force_refresh = bool(actualizar)
+    generator = buscar_controller.buscar_keys_pipeline(
+        empresa, dominio, tmp_path, archivo.filename, force_refresh
+    )
+    response = StreamingResponse(generator, media_type="text/plain; charset=utf-8")
+
+    def _cleanup():
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+    response.call_on_close(_cleanup)
+    return response
 
 
 @router.get("/buscar/key/result/data")

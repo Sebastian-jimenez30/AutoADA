@@ -94,6 +94,19 @@
   max-width: 320px;
 }
 
+.form-field--full input[type="file"] {
+  width: 100%;
+  max-width: none;
+  background: #fff;
+  padding: 10px;
+}
+
+.form-help-text {
+  margin: -6px 0 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 /* --- Campos generales --- */
 .form-field {
   display: flex;

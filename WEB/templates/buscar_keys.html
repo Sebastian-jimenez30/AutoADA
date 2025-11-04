@@ -5,63 +5,55 @@
 {% block content %}
 <section class="buscarkey-wrapper">
   <header class="buscarkey-header">
-  <div class="buscarkey-header__title">
-    <h2>Buscar Key</h2>
-    <button type="button" class="info-btn" id="infoBtn" title="Más información">
-      <span>?</span>
-    </button>
-  </div>
+    <div class="buscarkey-header__title">
+      <h2>Buscar Keys (archivo)</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
+    </div>
   </header>
 
-  <!-- Modal informativo -->
   <div id="infoModal" class="info-modal">
     <div class="info-modal__content">
       <div class="info-modal__header">
-        <h3>Ayuda — Buscar Key</h3>
+        <h3>Ayuda — Buscar Keys desde archivo</h3>
         <button class="info-modal__close" id="closeInfoBtn">&times;</button>
       </div>
 
       <div class="info-modal__body">
         <p>
-          Esta herramienta te permite localizar una o varias <strong>keys</strong> dentro de los datasets más recientes.
+          Esta modalidad procesa un <strong>archivo Excel</strong> con múltiples keys para automatizar la búsqueda en SCADA, HSH y ODS.
+          Usa la misma lógica que la aplicación de escritorio, generando el reporte <code>Find_Key.xlsx</code>.
         </p>
 
-        <h4>Entradas</h4>
+        <h4>Requisitos del archivo</h4>
         <ul>
-          <li><strong>Empresa:</strong> selecciona la empresa objetivo.</li>
-          <li><strong>Dominio:</strong> define el entorno de origen (SCADA, HSH, ODS, etc.).</li>
-          <li><strong>Actualizar información:</strong> si está activado, se ejecutarán los procesos <code>importar_all</code> y <code>convertir_all</code> antes de buscar.</li>
-          <li><strong>Key(s) a buscar:</strong> admite múltiples keys separadas por comas. Puedes usar el símbolo <code>%</code> como comodín.</li>
+          <li>Formato <code>.xlsx</code>, <code>.xlsm</code> o <code>.xls</code>.</li>
+          <li>Las keys deben estar en la <strong>columna A</strong>; la primera fila se considera encabezado y se omite.</li>
+          <li>Se permiten comodines con <code>%</code> y códigos de 8 dígitos (ej. <code>12345.67</code>).</li>
         </ul>
 
-        <h4>Salidas</h4>
+        <h4>Flujo</h4>
         <ul>
-          <li>Genera el archivo <code>Find_Key.xlsx</code> con las coincidencias encontradas.</li>
-          <li>Registra la ejecución y resultados en la <strong>consola del proceso</strong>.</li>
-        </ul>
-
-        <h4>Restricciones</h4>
-        <ul>
-          <li>No permite ejecutar búsquedas simultáneas.</li>
-          <li>No modifica datos en los sistemas origen.</li>
-          <li>Requiere conexión estable al entorno ODBC configurado.</li>
+          <li>Opcionalmente actualiza los datasets remotos (SCADA/HSH/ODS) antes de buscar.</li>
+          <li>Ejecuta <code>scripts.buscar_keys</code> reutilizando la lógica de AutoADA.</li>
+          <li>Genera el mismo reporte que <strong>Buscar Key</strong>, disponible para descarga y vista rápida.</li>
         </ul>
       </div>
     </div>
   </div>
 
-  <!-- Panel de formulario -->
   <section class="buscarkey-form card">
     <h3>Parámetros de búsqueda</h3>
     <form
       id="buscarKeyForm"
       method="post"
-      action="/buscar/key/run"
-      data-run-url="/buscar/key/run"
+      action="/buscar/keys/run"
+      enctype="multipart/form-data"
+      data-run-url="/buscar/keys/run"
       data-result-url="/buscar/key/result/data"
     >
       <div class="form-layout">
-        <!-- COLUMNA IZQUIERDA -->
         <div class="form-left">
           <div class="form-row-top">
             <div class="form-field">
@@ -93,21 +85,24 @@
           </div>
 
           <div class="form-field form-field--full">
-            <label for="keys">Key(s) a buscar</label>
+            <label for="archivo">Archivo Excel con keys</label>
             <input
-              type="text"
-              id="keys"
-              name="keys"
-              placeholder="Ej: 12345.67, 23456.78, 34567.%"
+              type="file"
+              id="archivo"
+              name="archivo"
+              accept=".xlsx,.xlsm,.xls"
               required
             >
           </div>
+
+          <p class="form-help-text">
+            <strong>Tip:</strong> asegúrate de que la primera fila sea un encabezado (ej. <em>Key</em>) y coloca las claves a partir de la fila 2.
+          </p>
         </div>
 
-        <!-- COLUMNA DERECHA -->
         <div class="form-right">
           <button type="submit" class="btn btn-primary" id="buscarKeyBtn">
-            Buscar
+            Buscar desde archivo
           </button>
           <button type="button" class="btn btn-secondary" id="limpiarLogBtn">
             Limpiar consola
@@ -117,7 +112,6 @@
     </form>
   </section>
 
-  <!-- Panel de consola -->
   <section class="buscarkey-output card">
     <div class="output-tabs" role="tablist">
       <button type="button" class="output-tab is-active" data-target="console" role="tab" aria-selected="true">

@@ -19,6 +19,30 @@ document.addEventListener("DOMContentLoaded", () => {
   const sheetTabsContainer = document.getElementById("resultSheetTabs");
   const downloadBtn = document.getElementById("resultDownloadBtn");
 
+  const runUrl =
+    form?.dataset.runUrl || form?.getAttribute("action") || "/buscar/key/run";
+  const resultBaseUrl =
+    form?.dataset.resultUrl || "/buscar/key/result/data";
+  const origin = window.location.origin;
+
+  const buildResultUrl = (sheetValue) => {
+    try {
+      const url = new URL(resultBaseUrl, origin);
+      if (sheetValue) {
+        url.searchParams.set("sheet", sheetValue);
+      } else {
+        url.searchParams.delete("sheet");
+      }
+      return url.toString();
+    } catch (error) {
+      if (sheetValue) {
+        const separator = resultBaseUrl.includes("?") ? "&" : "?";
+        return `${resultBaseUrl}${separator}sheet=${encodeURIComponent(sheetValue)}`;
+      }
+      return resultBaseUrl;
+    }
+  };
+
   const sheetCache = new Map();
   let availableSheets = [];
   let activeSheet = null;
@@ -227,10 +251,8 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.dataset.href = "";
     }
 
-    const query = targetSheet ? `?sheet=${encodeURIComponent(targetSheet)}` : "";
-
     try {
-      const response = await fetch(`/buscar/key/result/data${query}`, { cache: "no-store" });
+      const response = await fetch(buildResultUrl(targetSheet), { cache: "no-store" });
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error("No se encontraron resultados recientes. Ejecuta una búsqueda para generar un informe.");
@@ -370,7 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let response;
     try {
-      response = await fetch("/buscar/key/run", {
+      response = await fetch(runUrl, {
         method: "POST",
         body: formData,
       });
