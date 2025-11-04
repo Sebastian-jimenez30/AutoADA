@@ -1,0 +1,17 @@
+{% macro process_console(
+    title="Consola del proceso",
+    status_id="consoleStatus",
+    output_id="consoleOutput",
+    result_id="consoleResult",
+    wrapper_class="console-panel card",
+    initial_status="En espera"
+) -%}
+<section class="{{ wrapper_class }}">
+  <div class="console-header">
+    <h3>{{ title }}</h3>
+    <span id="{{ status_id }}" class="console-status">{{ initial_status }}</span>
+  </div>
+  <pre class="console-output" id="{{ output_id }}"></pre>
+  <div id="{{ result_id }}" class="console-result"></div>
+</section>
+{%- endmacro %}

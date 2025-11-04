@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "components/console.html" as components %}
 
 {% block content %}
 <section class="buscarkey-wrapper">
@@ -110,14 +111,13 @@
   </section>
 
   <!-- Panel de consola -->
-  <section class="buscarkey-console card">
-    <div class="console-header">
-      <h3>Consola del proceso</h3>
-      <span id="logStatus" class="console-status">En espera</span>
-    </div>
-    <pre class="console-output" id="logOutput"></pre>
-    <div id="resultMessage" class="console-result"></div>
-  </section>
+  {{ components.process_console(
+    title="Consola del proceso",
+    status_id="logStatus",
+    output_id="logOutput",
+    result_id="resultMessage",
+    wrapper_class="buscarkey-console card"
+  ) }}
 </section>
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
