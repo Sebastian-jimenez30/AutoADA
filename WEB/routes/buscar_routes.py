@@ -92,19 +92,20 @@ def ejecutar_buscar_keys(
         raise HTTPException(status_code=500, detail="No fue posible almacenar el archivo para su procesamiento.")
 
     force_refresh = bool(actualizar)
-    generator = buscar_controller.buscar_keys_pipeline(
-        empresa, dominio, tmp_path, archivo.filename, force_refresh
-    )
-    response = StreamingResponse(generator, media_type="text/plain; charset=utf-8")
+    archivo_nombre = archivo.filename
 
-    def _cleanup():
+    def _pipeline_with_cleanup():
         try:
-            os.remove(tmp_path)
-        except Exception:
-            pass
+            yield from buscar_controller.buscar_keys_pipeline(
+                empresa, dominio, tmp_path, archivo_nombre, force_refresh
+            )
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
-    response.call_on_close(_cleanup)
-    return response
+    return StreamingResponse(_pipeline_with_cleanup(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/buscar/key/result/data")
