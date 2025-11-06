@@ -631,8 +631,6 @@ def crear_tags_pipeline(
 
         def _console_write(msg: str, tag: str = "info") -> None:
             lines.append(f"[PI][{tag.upper()}] {msg}")
-            yield_line = f"[PI::{tag.upper()}] {msg}"
-            yield_yield.append(yield_line)
 
         def _status_hook(emp: str, step: str, ok: Optional[bool], message: Optional[str]) -> None:
             _record_status(emp, "pi", ok, message)
@@ -892,8 +890,9 @@ def crear_tags_pipeline(
 
         tags_for_pi = inserted_tags_full.get(empresa, set())
         pi_lines, pi_failed = _collect_pi_verification(tags_for_pi)
-        if pi_lines:
-            verification_messages.extend(pi_lines)
+        for line in pi_lines:
+            yield line + "\n"
+            verification_messages.append(line)
         if pi_failed:
             verification_failed = True
 
