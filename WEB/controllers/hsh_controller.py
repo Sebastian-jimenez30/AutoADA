@@ -631,6 +631,8 @@ def crear_tags_pipeline(
 
         def _console_write(msg: str, tag: str = "info") -> None:
             lines.append(f"[PI][{tag.upper()}] {msg}")
+            yield_line = f"[PI::{tag.upper()}] {msg}"
+            yield_yield.append(yield_line)
 
         def _status_hook(emp: str, step: str, ok: Optional[bool], message: Optional[str]) -> None:
             _record_status(emp, "pi", ok, message)
@@ -652,9 +654,24 @@ def crear_tags_pipeline(
         )
 
         if result_pi.messages:
-            lines.extend(f"[PI] {msg}" for msg in result_pi.messages)
+            for msg in result_pi.messages:
+                lines.append(f"[PI][INFO] {msg}")
         if result_pi.missing_lines:
-            lines.extend(f"[PI] {msg}" for msg in result_pi.missing_lines)
+            for msg in result_pi.missing_lines:
+                lines.append(f"[PI][WARN] {msg}")
+        for json_line in result_pi.lines:
+            lines.append(f"[PI][RAW] {json_line}")
+        if result_pi.snapshot_map:
+            rows = result_pi.snapshot_map.get(emp_upper, [])
+            for row in rows:
+                name = row.get("Name", "?")
+                value = row.get("Value", "?")
+                timestamp = row.get("Timestamp", "?")
+                lines.append(f"[PI][DATA] {name} = {value} @ {timestamp}")
+        if result_pi.missing_map:
+            missing = result_pi.missing_map.get(emp_upper, [])
+            if missing:
+                lines.append(f"[PI][MISSING] {', '.join(missing)}")
         return lines, result_pi.has_failures
 
     def _handle_marker(line: str):
