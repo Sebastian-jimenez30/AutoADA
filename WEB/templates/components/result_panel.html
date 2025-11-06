@@ -6,7 +6,9 @@
     empty_id="resultEmptyState",
     download_id="resultDownloadBtn",
     meta_id="resultMeta",
-    sheet_tabs_id="resultSheetTabs"
+    sheet_tabs_id="resultSheetTabs",
+    file_list_id="resultFileList",
+    details_id="resultDetails"
 ) -%}
 <div id="{{ wrapper_id }}" class="result-panel" hidden>
   <div class="result-toolbar">
@@ -27,5 +29,7 @@
       Aún no hay resultados para mostrar.
     </div>
   </div>
+  <div id="{{ file_list_id }}" class="result-file-list" hidden></div>
+  <div id="{{ details_id }}" class="result-details" hidden></div>
 </div>
 {%- endmacro %}

@@ -18,11 +18,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultMeta = document.getElementById("resultMeta");
   const sheetTabsContainer = document.getElementById("resultSheetTabs");
   const downloadBtn = document.getElementById("resultDownloadBtn");
+  const fileListContainer = document.getElementById("resultFileList");
+  const resultDetails = document.getElementById("resultDetails");
 
   const runUrl =
-    form?.dataset.runUrl || form?.getAttribute("action") || "/buscar/key/run";
+    form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
   const resultBaseUrl =
-    form?.dataset.resultUrl || "/buscar/key/result/data";
+    form.dataset.resultUrl || "/buscar/key/result/data";
+  const fileDownloadBase =
+    form.dataset.fileDownload || "/buscar/key/result/download";
   const origin = window.location.origin;
 
   const buildResultUrl = (sheetValue) => {
@@ -34,19 +38,23 @@ document.addEventListener("DOMContentLoaded", () => {
         url.searchParams.delete("sheet");
       }
       return url.toString();
-    } catch (error) {
+    } catch {
       if (sheetValue) {
         const separator = resultBaseUrl.includes("?") ? "&" : "?";
-        return `${resultBaseUrl}${separator}sheet=${encodeURIComponent(sheetValue)}`;
+        return `${resultBaseUrl}${separator}sheet=${encodeURIComponent(
+          sheetValue,
+        )}`;
       }
       return resultBaseUrl;
     }
   };
 
+  const buildDownloadUrl = (filePath) =>
+    `${fileDownloadBase}?path=${encodeURIComponent(filePath)}`;
+
   const sheetCache = new Map();
   let availableSheets = [];
   let activeSheet = null;
-  let latestResult = null;
   let resultsNeedsRefresh = true;
   let resultsLoading = false;
 
@@ -68,17 +76,18 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const resetResultsView = () => {
-    latestResult = null;
     resultsNeedsRefresh = true;
     activeSheet = null;
     availableSheets = [];
     sheetCache.clear();
     if (!resultPanel) return;
+
     resultHead.innerHTML = "";
     resultBody.innerHTML = "";
     resultPanel.classList.add("is-empty");
     if (resultEmpty) {
-      resultEmpty.textContent = "Los resultados aparecerán aquí al finalizar el proceso.";
+      resultEmpty.textContent =
+        "Los resultados aparecerán aquí al finalizar el proceso.";
     }
     if (resultMeta) {
       resultMeta.textContent = "";
@@ -91,6 +100,14 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.disabled = true;
       downloadBtn.dataset.href = "";
     }
+    if (fileListContainer) {
+      fileListContainer.innerHTML = "";
+      fileListContainer.classList.remove("is-visible");
+    }
+    if (resultDetails) {
+      resultDetails.innerHTML = "";
+      resultDetails.classList.remove("is-visible");
+    }
   };
 
   const updateSheetTabs = (sheets, active) => {
@@ -98,12 +115,9 @@ document.addEventListener("DOMContentLoaded", () => {
     sheetTabsContainer.innerHTML = "";
     sheetTabsContainer.classList.remove("has-tabs");
 
-    if (!Array.isArray(sheets) || sheets.length <= 1) {
-      return;
-    }
+    if (!Array.isArray(sheets) || sheets.length <= 1) return;
 
     sheetTabsContainer.classList.add("has-tabs");
-
     sheets.forEach((name) => {
       const button = document.createElement("button");
       button.type = "button";
@@ -132,20 +146,76 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const renderFileList = (files) => {
+    if (!fileListContainer) return;
+    const list = Array.isArray(files) ? files.filter(Boolean) : [];
+    if (!list.length) {
+      fileListContainer.innerHTML = "";
+      fileListContainer.classList.remove("is-visible");
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const title = document.createElement("p");
+    title.textContent = "Archivos generados:";
+    fragment.appendChild(title);
+
+    const ul = document.createElement("ul");
+    list.forEach((filePath) => {
+      const li = document.createElement("li");
+      const link = document.createElement("a");
+      link.href = buildDownloadUrl(filePath);
+      link.textContent = filePath;
+      link.target = "_blank";
+      link.rel = "noopener";
+      li.appendChild(link);
+      ul.appendChild(li);
+    });
+    fragment.appendChild(ul);
+
+    fileListContainer.innerHTML = "";
+    fileListContainer.appendChild(fragment);
+    fileListContainer.classList.add("is-visible");
+  };
+
+  const renderDetails = (details) => {
+    if (!resultDetails) return;
+    const lines = Array.isArray(details) ? details.filter(Boolean) : [];
+    if (!lines.length) {
+      resultDetails.innerHTML = "";
+      resultDetails.classList.remove("is-visible");
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const title = document.createElement("p");
+    title.textContent = "Resumen:";
+    fragment.appendChild(title);
+    const list = document.createElement("ul");
+    list.style.margin = "8px 0 0 16px";
+    list.style.padding = "0";
+    lines.forEach((line) => {
+      const item = document.createElement("li");
+      item.textContent = line;
+      list.appendChild(item);
+    });
+    fragment.appendChild(list);
+
+    resultDetails.innerHTML = "";
+    resultDetails.appendChild(fragment);
+    resultDetails.classList.add("is-visible");
+  };
+
   const renderResults = (data) => {
     if (!resultPanel || !data) return;
-
-    latestResult = data;
 
     const sheetList = Array.isArray(data?.sheets) ? data.sheets : [];
     if (sheetList.length) {
       availableSheets = sheetList;
     }
-
     if (data?.active_sheet) {
       activeSheet = data.active_sheet;
     }
-
     updateSheetTabs(availableSheets, activeSheet);
     refreshSheetTabsActiveState();
 
@@ -153,19 +223,30 @@ document.addEventListener("DOMContentLoaded", () => {
     const rows = Array.isArray(data?.rows) ? data.rows : [];
     const total = typeof data?.total === "number" ? data.total : rows.length;
     const hasMore = Boolean(data?.has_more);
+    const files = Array.isArray(data?.files) ? data.files : [];
+    const details = data?.details || (data?.extra && data.extra.details);
+    const message = data?.message;
 
     resultPanel.removeAttribute("hidden");
     resultHead.innerHTML = "";
     resultBody.innerHTML = "";
 
-    if (!columns.length || !rows.length) {
+    const hasTabularData = columns.length > 0 && rows.length > 0;
+
+    if (!hasTabularData) {
       resultPanel.classList.add("is-empty");
       if (resultEmpty) {
-        const noColumns = rows.length && !columns.length;
-        const sheetLabel = activeSheet ? `Hoja "${activeSheet}"` : "Hoja seleccionada";
-        resultEmpty.textContent = noColumns
-          ? `${sheetLabel} sin columnas visibles.`
-          : `${sheetLabel} no contiene registros para mostrar.`;
+        if (files.length) {
+          resultEmpty.textContent =
+            "No hay tabla para mostrar. Revisa los archivos generados.";
+        } else if (message) {
+          resultEmpty.textContent = message;
+        } else {
+          const sheetLabel = activeSheet
+            ? `Hoja "${activeSheet}"`
+            : "Hoja seleccionada";
+          resultEmpty.textContent = `${sheetLabel} no contiene registros para mostrar.`;
+        }
       }
     } else {
       resultPanel.classList.remove("is-empty");
@@ -191,7 +272,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (resultMeta) {
-      if (rows.length) {
+      if (hasTabularData) {
         const plural = rows.length === 1 ? "" : "s";
         const suffix = hasMore
           ? total > rows.length
@@ -201,9 +282,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const prefix = `Mostrando ${rows.length}`;
         const sheetLabel = activeSheet ? `Hoja: ${activeSheet} — ` : "";
         resultMeta.textContent = `${sheetLabel}${prefix}${suffix}`;
+      } else if (message) {
+        resultMeta.textContent = message;
       } else {
-        const sheetLabel = activeSheet ? `Hoja: ${activeSheet}.` : "";
-        resultMeta.textContent = `${sheetLabel} Sin registros para mostrar.`.trim();
+        resultMeta.textContent = "";
       }
     }
 
@@ -212,9 +294,16 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.dataset.href = url;
       downloadBtn.disabled = !url;
     }
+
+    renderFileList(files);
+    renderDetails(details);
   };
 
-  const loadResults = async ({ force = false, autoActivate = false, sheet = null } = {}) => {
+  const loadResults = async ({
+    force = false,
+    autoActivate = false,
+    sheet = null,
+  } = {}) => {
     if (!resultPanel) {
       if (autoActivate) activatePanel("results");
       return;
@@ -250,14 +339,28 @@ document.addEventListener("DOMContentLoaded", () => {
       downloadBtn.disabled = true;
       downloadBtn.dataset.href = "";
     }
+    if (fileListContainer) {
+      fileListContainer.innerHTML = "";
+      fileListContainer.classList.remove("is-visible");
+    }
+    if (resultDetails) {
+      resultDetails.innerHTML = "";
+      resultDetails.classList.remove("is-visible");
+    }
 
     try {
-      const response = await fetch(buildResultUrl(targetSheet), { cache: "no-store" });
+      const response = await fetch(buildResultUrl(targetSheet), {
+        cache: "no-store",
+      });
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error("No se encontraron resultados recientes. Ejecuta una búsqueda para generar un informe.");
+          throw new Error(
+            "No se encontraron resultados recientes. Ejecuta una búsqueda para generar un informe.",
+          );
         }
-        throw new Error(`Error al cargar resultados (HTTP ${response.status}).`);
+        throw new Error(
+          `Error al cargar resultados (HTTP ${response.status}).`,
+        );
       }
       const data = await response.json();
       if (data?.active_sheet) {
@@ -266,9 +369,10 @@ document.addEventListener("DOMContentLoaded", () => {
       resultsNeedsRefresh = false;
       renderResults(data);
     } catch (error) {
-      latestResult = null;
       const message =
-        error instanceof Error ? error.message : "No se pudieron cargar los resultados.";
+        error instanceof Error
+          ? error.message
+          : "No se pudieron cargar los resultados.";
       if (resultPanel) {
         resultPanel.classList.add("is-empty");
       }
@@ -278,13 +382,14 @@ document.addEventListener("DOMContentLoaded", () => {
       if (resultMeta) {
         resultMeta.textContent = "";
       }
-      if (sheetTabsContainer) {
-        sheetTabsContainer.innerHTML = "";
-        sheetTabsContainer.classList.remove("has-tabs");
+      if (fileListContainer) {
+        fileListContainer.innerHTML = "";
+        fileListContainer.classList.remove("is-visible");
       }
-      sheetCache.clear();
-      availableSheets = [];
-      activeSheet = null;
+      if (resultDetails) {
+        resultDetails.innerHTML = "";
+        resultDetails.classList.remove("is-visible");
+      }
     } finally {
       resultsLoading = false;
       if (autoActivate) {
@@ -321,7 +426,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const showResult = (status, message) => {
     if (!resultBox) return;
     resultBox.textContent = message;
-    resultBox.className = `result-message ${status === "SUCCESS" ? "success" : "error"}`;
+    resultBox.className = `result-message ${
+      status === "SUCCESS" ? "success" : "error"
+    }`;
     resultBox.style.display = "block";
   };
 
@@ -358,7 +465,10 @@ document.addEventListener("DOMContentLoaded", () => {
           try {
             finalResult = JSON.parse(trimmed.substring("RESULT::".length));
           } catch {
-            finalResult = { status: "ERROR", message: "No fue posible interpretar el resultado final." };
+            finalResult = {
+              status: "ERROR",
+              message: "No fue posible interpretar el resultado final.",
+            };
           }
           continue;
         }
@@ -370,9 +480,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (leftover.trim()) {
       if (leftover.trim().startsWith("RESULT::")) {
         try {
-          finalResult = JSON.parse(leftover.trim().substring("RESULT::".length));
+          finalResult = JSON.parse(
+            leftover.trim().substring("RESULT::".length),
+          );
         } catch {
-          finalResult = { status: "ERROR", message: "No fue posible interpretar el resultado final." };
+          finalResult = {
+            status: "ERROR",
+            message: "No fue posible interpretar el resultado final.",
+          };
         }
       } else {
         appendLog(`${leftover}\n`);
@@ -406,7 +521,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!response.ok || !response.body) {
       const text = await response.text();
       appendLog(`[SERVER] Respuesta inesperada (${response.status}): ${text}\n`);
-      showResult("ERROR", "La ejecución no pudo iniciarse. Verifica los parámetros.");
+      showResult(
+        "ERROR",
+        "La ejecución no pudo iniciarse. Verifica los parámetros.",
+      );
       setStatus("Error", "ERROR");
       return;
     }
@@ -421,7 +539,10 @@ document.addEventListener("DOMContentLoaded", () => {
         await loadResults({ force: true, autoActivate: true, sheet: null });
       }
     } else {
-      showResult("ERROR", "El proceso finalizó sin entregar un resultado final.");
+      showResult(
+        "ERROR",
+        "El proceso finalizó sin entregar un resultado final.",
+      );
       setStatus("Error", "ERROR");
     }
   };

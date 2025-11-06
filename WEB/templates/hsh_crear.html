@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
+
+{% block content %}
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+    <div class="buscarkey-header__title">
+      <h2>Crear Tag HSH</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda — Crear Tag HSH</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+
+      <div class="info-modal__body">
+        <p>
+          Este proceso valida un archivo Excel con nuevos tags y, si lo indicas, los inserta en HSH.
+          Reutiliza el flujo histórico de AutoADA: genera reportes, ejecuta comandos SCADA y consulta PI.
+        </p>
+
+        <h4>Requisitos</h4>
+        <ul>
+          <li>Archivo <code>.xlsx/.xlsm/.xls</code> con la hoja y columnas esperadas por AutoADA.</li>
+          <li>Seleccionar empresa y dominio (por defecto <strong>CC</strong>).</li>
+          <li>Opcional: marcar “Actualizar datos” para refrescar SCADA/HSH locales antes de validar.</li>
+          <li>Opcional: marcar “Insertar en HSH” para ejecutar el modo <code>--apply</code>.</li>
+        </ul>
+
+        <h4>Salidas</h4>
+        <ul>
+          <li>Reportes Excel/TXT con resultados de validación e inserción.</li>
+          <li>Archivos con comandos SCADA/PI según corresponda.</li>
+          <li>Resumen de verificación cuando se aplica.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="buscarkey-form card">
+    <h3>Parámetros de ejecución</h3>
+    <form
+      id="buscarKeyForm"
+      method="post"
+      action="/hsh/crear/run"
+      enctype="multipart/form-data"
+      data-run-url="/hsh/crear/run"
+      data-result-url="/hsh/crear/result"
+      data-file-download="/hsh/crear/result/download"
+    >
+      <div class="form-layout">
+        <div class="form-left">
+          <div class="form-row-top">
+            <div class="form-field">
+              <label for="empresa">Empresa</label>
+              <select id="empresa" name="empresa" required>
+                <option value="" disabled selected>Selecciona la empresa</option>
+                {% for empresa in empresas %}
+                  <option value="{{ empresa }}">{{ empresa }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="dominio">Dominio</label>
+              <select id="dominio" name="dominio" required>
+                <option value="CC" selected>CC</option>
+                {% for dominio in dominios %}
+                  <option value="{{ dominio }}">{{ dominio }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-field checkbox-field">
+              <label>
+                <input type="checkbox" id="actualizar" name="actualizar" value="1">
+                Actualizar datos locales
+              </label>
+            </div>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="archivo">Archivo Excel con tags</label>
+            <input
+              type="file"
+              id="archivo"
+              name="archivo"
+              accept=".xlsx,.xlsm,.xls"
+              required
+            >
+          </div>
+
+          <div class="form-field checkbox-field">
+            <label>
+              <input type="checkbox" id="aplicar" name="aplicar" value="1">
+              Insertar en HSH (modo apply)
+            </label>
+          </div>
+
+          <p class="form-help-text">
+            <strong>Nota:</strong> en modo apply se ejecutan acciones remotas (SSH/PI). Asegúrate de revisar los reportes antes de repetir la operación.
+          </p>
+        </div>
+
+        <div class="form-right">
+          <button type="submit" class="btn btn-primary" id="buscarKeyBtn">
+            Ejecutar
+          </button>
+          <button type="button" class="btn btn-secondary" id="limpiarLogBtn">
+            Limpiar consola
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="console" role="tab" aria-selected="true">
+        Consola
+      </button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">
+        Resultados
+      </button>
+    </div>
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta",
+          file_list_id="resultFileList",
+          details_id="resultDetails"
+        ) }}
+      </div>
+    </div>
+  </section>
+</section>
+
+<script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn.addEventListener("click", () => {
+    infoModal.classList.add("is-visible");
+  });
+
+  closeInfoBtn.addEventListener("click", () => {
+    infoModal.classList.remove("is-visible");
+  });
+
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
+
+{% endblock %}
