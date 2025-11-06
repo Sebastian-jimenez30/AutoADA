@@ -304,7 +304,6 @@ def crear_tags_pipeline(
     archivo_path: str,
     archivo_nombre: str | None,
     aplicar: bool,
-    forzar_actualizacion: bool,
 ) -> Generator[str, None, None]:
     global last_crear_result
 
@@ -359,8 +358,8 @@ def crear_tags_pipeline(
         run_targets.append((respaldo, empresa, servidor_respaldo))
 
     ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
-    needs_update = forzar_actualizacion or (not ready)
-    yield f"Datos locales disponibles para {empresa}: {ready} (forzar={forzar_actualizacion})\n"
+    needs_update = True
+    yield f"Datos locales disponibles para {empresa}: {ready} (se forzará actualización previa)\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
 
     report_paths: set[str] = set()
