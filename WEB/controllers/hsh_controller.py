@@ -212,9 +212,16 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
 
             for tag in tags:
                 command = _encoded_ps_single(emp_upper, tag, pi_server)
+                print(f"[PI][DEBUG] Ejecutando comando para {emp_upper}:{tag} -> {command}", flush=True)
                 try:
                     proc = subprocess.run(command, shell=True, capture_output=True, text=True, check=False)
                     output = proc.stdout or ""
+                    err_output = proc.stderr or ""
+                    print(
+                        f"[PI][DEBUG] Resultado comando ({emp_upper}:{tag}) rc={proc.returncode}\n"
+                        f"stdout={output}\nstderr={err_output}",
+                        flush=True,
+                    )
                 except Exception as exc:
                     msg = f"{emp_upper}: error ejecutando consulta PI para {tag}: {exc}"
                     messages.append(msg)
@@ -235,10 +242,10 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
                                 missing_map.setdefault(emp_upper, []).append(tag)
                                 missing_lines.append(f"{emp_upper}: sin datos para {tag}")
                                 _record(emp_upper, f"Sin datos PI para {tag}", False)
-                        except Exception:
+                        except Exception as exc:
                             missing_map.setdefault(emp_upper, []).append(tag)
-                            missing_lines.append(f"{emp_upper}: error interpretando respuesta PI ({tag})")
-                            _record(emp_upper, f"Error parseando respuesta PI para {tag}", False)
+                            missing_lines.append(f"{emp_upper}: error interpretando respuesta PI ({tag}) ({exc})")
+                            _record(emp_upper, f"Error parseando respuesta PI para {tag}: {exc}", False)
                             has_failures = True
                     else:
                         lines.append(line)
