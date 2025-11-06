@@ -1,27 +1,56 @@
 from __future__ import annotations
 
+import base64
+import csv
 import json
 import os
+import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Generator, Iterable, Optional
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Set, Tuple
 from urllib.parse import quote
+
+from openpyxl import load_workbook
 
 from services.vault_service import VaultService
 from services.server_resolver import ServerResolver
 from utils.cli import build_cmd
 from utils.data_checks import find_mode_data_ready
 
-import subprocess
-from openpyxl import load_workbook
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "AutoADA"))
+AUX_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
+AUTOADA_DIR = os.path.join(AUX_ROOT, "AutoADA")
 OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 HSH_OUTPUT_DIR = os.path.join(OUT_ROOT, "HSH")
 CREAR_TAG_DIR = os.path.join(OUT_ROOT, "crear_tag")
 CREAR_TAG_REPORT = os.path.join(CREAR_TAG_DIR, "reporte_crear_tag.xlsx")
+SCRIPTS_DIR = os.path.join(AUTOADA_DIR, "scripts")
+
+if AUTOADA_DIR not in sys.path:
+    sys.path.insert(0, AUTOADA_DIR)
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+from scripts import _Logger as Logger  # type: ignore
+from scripts.functions import scada_online, sshserver  # type: ignore
+from scripts.import_base import company_prefixes  # type: ignore
+
+SCADA_HOSTS_FULL: Dict[str, list[str]] = {
+    "ITCO": ["itco1sca01", "itco1sca02", "itco1qds01"],
+    "TRA": ["tra1sca01", "tra1sca02"],
+    "REPS": ["rep1sca01", "rep1sca02", "rep1qds01"],
+    "REPP": ["rep2sca01", "rep2sca02", "rep2qds01"],
+}
+
+PI_SERVER_MAP: Dict[str, str] = {
+    "ITCO": "PI-CO-ITCOTRA01",
+    "TRA": "PI-CO-ITCOTRA01",
+    "REPS": "PI-CO-ITCOTRA01",
+    "REPP": "PI-CO-ITCOTRA01",
+}
 
 SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
 SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
@@ -43,6 +72,182 @@ class CrearResult:
 
 
 last_crear_result: Optional[CrearResult] = None
+
+
+@dataclass
+class PiSnapshotResult:
+    lines: List[str]
+    missing_lines: List[str]
+    messages: List[str]
+    snapshot_map: Dict[str, List[Dict[str, str]]]
+    missing_map: Dict[str, List[str]]
+    collected_at: Optional[str]
+    has_failures: bool
+
+
+def collect_pi_snapshots(
+    *,
+    app,
+    tags_by_empresa: Dict[str, Set[str]],
+    server_map: Dict[str, Optional[str]],
+    console_write: Optional[Callable[[str, str], None]] = None,
+    record_status: Optional[Callable[[str, str, Optional[bool], Optional[str]], None]] = None,
+    empresa_principal: Optional[str] = None,
+    derive_prefixes: Optional[Callable[[str], Iterable[str]]] = None,
+    pi_server_map: Optional[Dict[str, str]] = None,
+    log_filename: str = "pi_query.log",
+) -> PiSnapshotResult:
+    console_write = console_write or (lambda msg, tag="info": None)
+    empresa_principal_u = empresa_principal.upper() if empresa_principal else None
+    pi_server_map = pi_server_map or PI_SERVER_MAP
+
+    lines: List[str] = []
+    missing_lines: List[str] = []
+    messages: List[str] = []
+    snapshot_map: Dict[str, List[Dict[str, str]]] = {}
+    missing_map: Dict[str, List[str]] = {}
+    collected_at: Optional[str] = None
+    has_failures = False
+
+    env_pi = app.secure_env() if app else {}
+    prev_env = {k: os.environ.get(k) for k in env_pi}
+    os.environ.update(env_pi)
+
+    def _restore_env():
+        for key, value in prev_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+    def _record(emp: str, message: str, ok: Optional[bool]) -> None:
+        console_write(message, "info" if ok else "error")
+        if record_status:
+            record_status(emp, "pi", ok, message)
+
+    try:
+        pi_user = os.environ.get("USER_PI")
+        pi_pass = os.environ.get("PASS_PI")
+        if not pi_user or not pi_pass:
+            msg = "PI: credenciales USER_PI/PASS_PI no disponibles."
+            messages.append(msg)
+            for emp_key in (tags_by_empresa.keys() or server_map.keys()):
+                if record_status:
+                    record_status(emp_key, "pi", False, msg)
+            return PiSnapshotResult(lines, missing_lines, messages, snapshot_map, missing_map, collected_at, True)
+
+        pi_user_ps = pi_user.replace('"', '`"')
+        pi_pass_ps = pi_pass.replace('"', '`"')
+
+        collected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        base_dir = getattr(app, "base_dir", AUTOADA_DIR)
+        log_dir = Path(base_dir) / "out" / "log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            logger, logger_console = Logger.initlog(str(log_dir / log_filename))
+        except Exception:
+            logger = logger_console = None  # type: ignore
+
+        def _derive_prefixes(emp_u: str, hint: Optional[str]) -> List[str]:
+            prefixes: List[str] = []
+            if derive_prefixes:
+                prefixes.extend(list(derive_prefixes(emp_u)))
+            if hint:
+                lowered = hint.lower()
+                cut = next((lowered.find(marker) for marker in ("sca", "qds", "his") if marker in lowered), -1)
+                pref = hint[:cut] if cut != -1 else hint
+                if pref:
+                    prefixes.append(pref)
+            for pref in company_prefixes(emp_u) or []:
+                if pref and pref not in prefixes:
+                    prefixes.append(pref)
+            return prefixes
+
+        def _encoded_ps_single(emp_u: str, tag: str, pi_server: str) -> str:
+            tag_json = json.dumps(tag)
+            template = """
+$ErrorActionPreference = 'Stop'
+Add-Type -Path "C:\\Program Files (x86)\\PIPC\\AF\\PublicAssemblies\\4.0\\OSIsoft.AFSDK.dll"
+$piServers = [OSIsoft.AF.PI.PIServers]::GetPIServers()
+$piServer = $piServers['{pi_server}']
+$securePassword = ConvertTo-SecureString "{pi_pass_ps}" -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential("{pi_user_ps}", $securePassword)
+$piServer.Connect($credential)
+$target = ConvertFrom-Json @'
+{tag_json}
+'@
+$result = @()
+foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*SCADA*", $true)) {{
+    if ($piPoint.Name -like "*${{target}}*") {{
+        $cv = $piPoint.CurrentValue()
+        $result += [PSCustomObject]@{{
+            Name = $piPoint.Name
+            Value = $cv.Value.ToString()
+            Timestamp = $cv.Timestamp.ToString()
+        }}
+        break
+    }}
+}}
+"__PI_JSON__:" + ($result | ConvertTo-Json -Depth 4 -Compress)
+"""
+            ps_script = template.format(
+                pi_server=pi_server,
+                pi_pass_ps=pi_pass_ps,
+                pi_user_ps=pi_user_ps,
+                tag_json=tag_json,
+                emp_u=emp_u,
+            )
+            encoded = base64.b64encode(ps_script.encode("utf-16-le")).decode("utf-8")
+            return f"powershell -NoLogo -NonInteractive -EncodedCommand {encoded}"
+
+        for empresa_u, tags in tags_by_empresa.items():
+            emp_upper = empresa_u.upper()
+            if not tags:
+                continue
+
+            server_hint = server_map.get(emp_upper)
+            prefixes = _derive_prefixes(emp_upper, server_hint)
+            pi_server = pi_server_map.get(emp_upper, "PI-CO-ITCOTRA01")
+
+            for tag in tags:
+                command = _encoded_ps_single(emp_upper, tag, pi_server)
+                try:
+                    proc = subprocess.run(command, shell=True, capture_output=True, text=True, check=False)
+                    output = proc.stdout or ""
+                except Exception as exc:
+                    msg = f"{emp_upper}: error ejecutando consulta PI para {tag}: {exc}"
+                    messages.append(msg)
+                    _record(emp_upper, msg, False)
+                    has_failures = True
+                    continue
+
+                pi_lines = [line.strip() for line in output.splitlines() if line.strip()]
+                for line in pi_lines:
+                    if line.startswith("__PI_JSON__:"):
+                        payload = line.split(":", 1)[1].strip()
+                        try:
+                            data = json.loads(payload)
+                            if data:
+                                snapshot_map.setdefault(emp_upper, []).extend(data if isinstance(data, list) else [data])
+                                _record(emp_upper, f"PI snapshot obtenido para {tag}", True)
+                            else:
+                                missing_map.setdefault(emp_upper, []).append(tag)
+                                missing_lines.append(f"{emp_upper}: sin datos para {tag}")
+                                _record(emp_upper, f"Sin datos PI para {tag}", False)
+                        except Exception:
+                            missing_map.setdefault(emp_upper, []).append(tag)
+                            missing_lines.append(f"{emp_upper}: error interpretando respuesta PI ({tag})")
+                            _record(emp_upper, f"Error parseando respuesta PI para {tag}", False)
+                            has_failures = True
+                    else:
+                        lines.append(line)
+
+        return PiSnapshotResult(
+            lines, missing_lines, messages, snapshot_map, missing_map, collected_at, has_failures
+        )
+    finally:
+        _restore_env()
 
 
 def get_empresas() -> Iterable[str]:
@@ -160,22 +365,386 @@ def crear_tags_pipeline(
 
     report_paths: set[str] = set()
     info_paths: set[str] = set()
+    extra_paths: set[str] = set()
     extra_messages: list[str] = []
     report_excel_path: Optional[str] = None
+    inserted_keys_full: dict[str, set[str]] = {}
+    inserted_keys_map: dict[str, dict[str, set[str]]] = {}
+    inserted_tags_full: dict[str, set[str]] = {}
+    apply_import_servers: dict[str, str] = {}
+    hsh_servers_used: dict[str, str] = {}
+    last_sca_host_seen: Optional[str] = None
+    verification_status: dict[str, dict[str, dict[str, Any]]] = {}
+    verification_order: list[str] = []
 
-    def _collect_marker(line: str):
-        nonlocal report_paths, info_paths, extra_messages, report_excel_path
+    def _ensure_status(emp: str) -> dict[str, dict[str, Any]]:
+        emp_u = emp.upper()
+        if emp_u not in verification_status:
+            verification_status[emp_u] = {
+                step: {"ok": None, "messages": []}
+                for step in ("import", "convert", "lookup", "scada", "pi")
+            }
+            verification_order.append(emp_u)
+        return verification_status[emp_u]
+
+    def _record_status(emp: str, step: str, ok: Optional[bool] = None, message: Optional[str] = None) -> None:
+        status = _ensure_status(emp).get(step)
+        if status is None:
+            return
+        if ok is not None:
+            current = status.get("ok")
+            if current is None:
+                status["ok"] = ok
+            elif current and not ok:
+                status["ok"] = False
+            elif current is False and ok:
+                status["ok"] = False
+            else:
+                status["ok"] = ok if current is None else current
+        if message:
+            messages = status.setdefault("messages", [])
+            if message not in messages:
+                messages.append(message)
+
+    def _lookup_paths_for(emp: str) -> list[Path]:
+        emp_u = emp.upper()
+        return [
+            Path(AUTOADA_DIR) / "out" / emp_u / "HSH" / "lookup_table.csv",
+            Path(OUT_ROOT) / emp_u / "HSH" / "lookup_table.csv",
+        ]
+
+    def _check_local_keys(emp: str, keys: Iterable[str]) -> tuple[list[str], list[str]]:
+        keys_set = {k.strip() for k in keys if k.strip()}
+        if not keys_set:
+            return [], []
+        present: set[str] = set()
+        for path in _lookup_paths_for(emp):
+            if not path.exists():
+                continue
+            try:
+                with path.open("r", encoding="utf-8", errors="ignore", newline="") as fh:
+                    reader = csv.DictReader(fh)
+                    for row in reader:
+                        value = (row.get("key") or row.get("Key") or "").strip()
+                        if value in keys_set:
+                            present.add(value)
+            except Exception:
+                continue
+        missing = sorted(keys_set - present)
+        return sorted(present), missing
+
+    def _build_verification_summary() -> list[str]:
+        lines: list[str] = []
+        for emp in verification_order:
+            status = verification_status.get(emp, {})
+            lines.append(f"{emp}:")
+            for step, label in (
+                ("import", "Importación HSH"),
+                ("convert", "Conversión HSH"),
+                ("lookup", "LookupTables"),
+                ("scada", "SCADA"),
+                ("pi", "PI"),
+            ):
+                data = status.get(step, {})
+                ok = data.get("ok")
+                messages = data.get("messages") or []
+                estado = "OK" if ok else ("ERROR" if ok is False else "PENDIENTE")
+                lines.append(f"  - {label}: {estado}" + (f" ({'; '.join(messages)})" if messages else ""))
+            lines.append("")
+        while lines and not lines[-1]:
+            lines.pop()
+        return lines
+
+    def _apply_scada_updates_for_web() -> tuple[list[str], bool]:
+        if not inserted_keys_map:
+            return [], False
+
+        if sshserver is None:
+            msg = "SCADA: función sshserver no disponible en este entorno."
+            for emp in inserted_keys_map.keys():
+                _record_status(emp, "scada", False, msg)
+            return [msg], True
+
+        env_secure = env
+        prev_env = {k: os.environ.get(k) for k in env_secure}
+        os.environ.update(env_secure)
+
+        log_dir = Path(AUTOADA_DIR) / "out" / "log"
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        if Logger is None:
+            msg = "SCADA: Logger no disponible; se omite actualización."
+            for emp in inserted_keys_map.keys():
+                _record_status(emp, "scada", False, msg)
+            for key, value in prev_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            return [msg], True
+
+        try:
+            logger, logger_console = Logger.initlog(str(log_dir / "scada_crear_tag.log"))
+        except Exception as exc:
+            msg = f"SCADA: no se pudo inicializar logger ({exc})."
+            for emp in inserted_keys_map.keys():
+                _record_status(emp, "scada", False, msg)
+            for key, value in prev_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            return [msg], True
+
+        messages: list[str] = []
+        has_fail = False
+        analog_suffixes = {"VALUE", "ESTIMATED"}
+
+        def _unique(seq: Iterable[str]) -> list[str]:
+            seen: set[str] = set()
+            items: list[str] = []
+            for item in seq:
+                if not item:
+                    continue
+                if item not in seen:
+                    seen.add(item)
+                    items.append(item)
+            return items
+
+        try:
+            for emp_u, base_map in inserted_keys_map.items():
+                if not base_map:
+                    continue
+
+                host_candidates = []
+                if emp_u in apply_import_servers:
+                    host_candidates.append(apply_import_servers[emp_u])
+                if emp_u in hsh_servers_used:
+                    host_candidates.append(hsh_servers_used[emp_u])
+                host_candidates.extend(SCADA_HOSTS_FULL.get(emp_u, []) or [])
+                default_host = SERVER_RESOLVER.generar_server(emp_u, "CC")
+                if default_host:
+                    host_candidates.append(default_host)
+                hosts = _unique(host_candidates)
+
+                if not hosts:
+                    msg = f"{emp_u}: no se encontraron servidores SCADA configurados."
+                    messages.append(msg)
+                    _record_status(emp_u, "scada", False, msg)
+                    has_fail = True
+                    continue
+
+                for host in hosts:
+                    client = None
+                    label = f"{emp_u} ({host})"
+                    try:
+                        client = sshserver(host, logger, logger_console)
+                        if client is None:
+                            raise RuntimeError("sshserver devolvió None")
+                        _record_status(emp_u, "scada", None, f"Conexión establecida con {host}")
+                        host_online = None
+                        try:
+                            host_online = scada_online(client, logger, logger_console)
+                        except Exception as exc:
+                            messages.append(f"{label}: error verificando estado ONLINE ({exc})")
+                        if host_online:
+                            messages.append(f"{label}: estado ONLINE detectado ({host_online})")
+                    except Exception as exc:
+                        msg = f"{label}: no se pudo conectar - {exc}"
+                        messages.append(msg)
+                        _record_status(emp_u, "scada", False, msg)
+                        has_fail = True
+                        if client:
+                            try:
+                                client.close()
+                            except Exception:
+                                pass
+                        continue
+
+                    try:
+                        for base_key, suffixes in base_map.items():
+                            suffix_set = {s.upper() for s in suffixes if s}
+                            bit_specs: set[tuple[int, int]] = set()
+                            if suffix_set & analog_suffixes:
+                                bit_specs.add((5, 1))
+                                if "ESTIMATED" in suffix_set:
+                                    bit_specs.add((5, 2))
+                            else:
+                                bit_specs.add((4, 1))
+                            if not bit_specs:
+                                bit_specs.add((4, 1))
+
+                            for tipo, bit in sorted(bit_specs):
+                                cmd = f". ~/.bash_profile && dbset -k 10 {tipo} 12 {base_key} {bit} = 1"
+                                try:
+                                    stdin, stdout, stderr = client.exec_command(cmd)
+                                    rc_cmd = stdout.channel.recv_exit_status()
+                                    if rc_cmd == 0:
+                                        msg = f"{label}: OK {base_key} bit {bit}"
+                                        messages.append(msg)
+                                        _record_status(emp_u, "scada", True, msg)
+                                    else:
+                                        err = stderr.read().decode("utf-8", "ignore").strip()
+                                        msg = f"{label}: fallo {base_key} bit {bit} (rc={rc_cmd}) {err}"
+                                        messages.append(msg)
+                                        _record_status(emp_u, "scada", False, msg)
+                                        has_fail = True
+                                except Exception as exc:
+                                    msg = f"{label}: error {base_key} bit {bit}: {exc}"
+                                    messages.append(msg)
+                                    _record_status(emp_u, "scada", False, msg)
+                                    has_fail = True
+                    finally:
+                        try:
+                            if client:
+                                client.close()
+                        except Exception:
+                            pass
+        finally:
+            for key, value in prev_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+        return messages, has_fail
+
+    def _derive_prefixes(emp_u: str) -> list[str]:
+        prefixes: list[str] = []
+        hint = apply_import_servers.get(emp_u)
+        if hint:
+            lowered = hint.lower()
+            cut = next((lowered.find(marker) for marker in ("sca", "qds", "his") if marker in lowered), -1)
+            pref = hint[:cut] if cut != -1 else hint
+            if pref:
+                prefixes.append(pref)
+        for pref in company_prefixes(emp_u) or []:
+            if pref and pref not in prefixes:
+                prefixes.append(pref)
+        return [p for p in prefixes if p]
+
+    def _collect_pi_verification() -> tuple[list[str], bool]:
+        tags_by_empresa = {
+            emp: set(tags)
+            for emp, tags in inserted_tags_full.items()
+            if tags
+        }
+        if not tags_by_empresa:
+            return [], False
+
+        dummy_app = _DummyApp(env, AUTOADA_DIR)
+        lines: list[str] = []
+
+        def _console_write(msg: str, tag: str = "info") -> None:
+            lines.append(f"[PI][{tag.upper()}] {msg}")
+
+        def _status_hook(emp: str, step: str, ok: Optional[bool], message: Optional[str]) -> None:
+            _record_status(emp, "pi", ok, message)
+
+        server_map = {}
+        for emp in tags_by_empresa.keys():
+            server_map[emp] = apply_import_servers.get(emp) or SERVER_RESOLVER.generar_server(emp, "CC")
+
+        result_pi = collect_pi_snapshots(
+            app=dummy_app,
+            tags_by_empresa=tags_by_empresa,
+            server_map=server_map,
+            console_write=_console_write,
+            record_status=_status_hook,
+            empresa_principal=empresa,
+            derive_prefixes=_derive_prefixes,
+            pi_server_map=PI_SERVER_MAP,
+        )
+
+        if result_pi.messages:
+            lines.extend(f"[PI] {msg}" for msg in result_pi.messages)
+        if result_pi.missing_lines:
+            lines.extend(f"[PI] {msg}" for msg in result_pi.missing_lines)
+        return lines, result_pi.has_failures
+
+    def _handle_marker(line: str):
+        nonlocal report_excel_path, last_sca_host_seen
+        line = line.strip()
+        if not line:
+            return
         if line.startswith("REPORT_PATH:"):
             path = line.split(":", 1)[1].strip()
             report_paths.add(path)
             if path.lower().endswith("reporte_crear_tag.xlsx"):
                 report_excel_path = path
         elif line.startswith("INFO_PATH:"):
-            info_paths.add(line.split(":", 1)[1].strip())
+            path = line.split(":", 1)[1].strip()
+            info_paths.add(path)
+            extra_paths.add(path)
         elif line.startswith("QUERY_PATH:"):
-            info_paths.add(line.split(":", 1)[1].strip())
+            path = line.split(":", 1)[1].strip()
+            info_paths.add(path)
+            extra_paths.add(path)
         elif line.startswith("SUMMARY:"):
-            extra_messages.append(line.split(":", 1)[1].strip())
+            msg = line.split(":", 1)[1].strip()
+            if msg:
+                extra_messages.append(msg)
+        elif line.startswith("Intentando conexion:"):
+            try:
+                seg = line.split("SCA=", 1)[1]
+                sca_host = seg.split("->", 1)[0].strip()
+                if sca_host:
+                    last_sca_host_seen = sca_host
+            except Exception:
+                pass
+        elif line.startswith("APPLY_SERVER:"):
+            try:
+                _, payload = line.split("APPLY_SERVER:", 1)
+                emp_part, server_part = payload.split(":", 1)
+                emp_key = emp_part.strip().upper()
+                server_used = server_part.strip()
+                if emp_key and server_used:
+                    hsh_servers_used[emp_key] = server_used
+            except ValueError:
+                pass
+        elif line.startswith("APPLY_SSH:"):
+            try:
+                _, payload = line.split("APPLY_SSH:", 1)
+                emp_part, server_part = payload.split(":", 1)
+                emp_key = emp_part.strip().upper()
+                ssh_host = server_part.strip()
+                if emp_key and ssh_host:
+                    apply_import_servers[emp_key] = ssh_host
+            except ValueError:
+                pass
+        elif line.startswith("APPLY_KEYS:"):
+            try:
+                _, payload = line.split("APPLY_KEYS:", 1)
+                emp_part, keys_part = payload.split(":", 1)
+                emp_key = emp_part.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                if keys:
+                    inserted_keys_full.setdefault(emp_key, set()).update(keys)
+                    base_map = inserted_keys_map.setdefault(emp_key, {})
+                    for full_key in keys:
+                        base, dot, suffix = full_key.partition(".")
+                        base_map.setdefault(base, set()).add(suffix if dot else "")
+            except ValueError:
+                pass
+        elif line.startswith("APPLY_TAGS:"):
+            try:
+                _, payload = line.split("APPLY_TAGS:", 1)
+                emp_part, tags_part = payload.split(":", 1)
+                emp_key = emp_part.strip().upper()
+                tags = [t.strip() for t in tags_part.split(",") if t.strip()]
+                if tags:
+                    inserted_tags_full.setdefault(emp_key, set()).update(tags)
+            except ValueError:
+                pass
+        elif line.startswith("APPLY_OK:"):
+            try:
+                _, payload = line.split("APPLY_OK:", 1)
+                emp_part, _ = payload.split(":", 1)
+                emp_key = emp_part.strip().upper()
+                if emp_key and last_sca_host_seen:
+                    apply_import_servers.setdefault(emp_key, last_sca_host_seen)
+            except Exception:
+                pass
 
     def _stream_script(label: str, cmd: list[str]) -> int:
         stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
@@ -183,19 +752,52 @@ def crear_tags_pipeline(
         try:
             while True:
                 chunk = next(stream)
-                if "[REPORT_PATH:" in chunk or "REPORT_PATH:" in chunk:
-                    _collect_marker(chunk.split("[", 1)[-1] if "[" in chunk else chunk)
-                elif "INFO_PATH:" in chunk or "QUERY_PATH:" in chunk or "SUMMARY:" in chunk:
-                    _collect_marker(chunk.split("[", 1)[-1] if "[" in chunk else chunk)
+                # Extraer la parte real del mensaje para interpretar marcadores
+                raw = chunk
+                if "[" in raw and "]" in raw:
+                    raw = raw.split("]", 1)[1]
+                _handle_marker(raw.strip())
                 yield chunk
         except StopIteration as stop:
             rc = stop.value if isinstance(stop.value, int) else 0
         return rc if rc is not None else 0
 
+    if needs_update:
+        if respaldo and not servidor_respaldo:
+            message = f"No se pudo resolver el servidor respaldo para {respaldo}."
+            _store_result("ERROR", message)
+            yield _result_line({"status": "ERROR", "message": message})
+            return
+
+        pre_commands: list[tuple[str, list[str]] | None] = [
+            ("IMPORT-PRINCIPAL", build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag")),
+            ("IMPORT-RESPALDO", build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_crear_tag")) if respaldo and servidor_respaldo else None,
+            ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+            ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+            ("CONVERT-SCA-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca")) if respaldo else None,
+            ("CONVERT-HSH-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh")) if respaldo else None,
+        ]
+
+        for entry in pre_commands:
+            if not entry:
+                continue
+            label, cmd = entry
+            rc_pre = yield from _stream_script(label, cmd)
+            if rc_pre != 0:
+                message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+                _store_result("ERROR", message)
+                yield _result_line({"status": "ERROR", "message": message})
+                return
+
     # Ejecución principal del script
     for target_empresa, target_respaldo, target_server in run_targets:
         accion = "Insertando" if aplicar else "Generando reporte"
         yield f"{accion} para empresa {target_empresa} (servidor {target_server})...\n"
+
+        if target_empresa:
+            apply_import_servers.setdefault(target_empresa.upper(), target_server)
+            if target_server:
+                hsh_servers_used.setdefault(target_empresa.upper(), target_server)
 
         cmd = build_cmd("scripts.hsh_crear_tag", target_empresa, "--input", archivo_path)
         if target_respaldo:
@@ -211,29 +813,75 @@ def crear_tags_pipeline(
             yield _result_line({"status": "ERROR", "message": message, "files": files})
             return
 
-    # Si se solicita actualización previa
-    if needs_update:
-        yield "Actualizando datasets SCADA/HSH antes de finalizar...\n"
-        cmd_import = build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag")
-        rc_import = yield from _stream_script("IMPORT-HSH", cmd_import)
-        if rc_import != 0:
-            message = f"Importación previa falló (rc={rc_import})."
-            files = sorted(report_paths | info_paths)
-            _store_result("ERROR", message, files=files)
-            yield _result_line({"status": "ERROR", "message": message, "files": files})
-            return
+    verification_messages: list[str] = []
+    verification_summary: list[str] = []
 
-        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")
-        rc_convert = yield from _stream_script("CONVERT-HSH", cmd_convert)
-        if rc_convert != 0:
-            message = f"Conversión HSH falló (rc={rc_convert})."
-            files = sorted(report_paths | info_paths)
-            _store_result("ERROR", message, files=files)
-            yield _result_line({"status": "ERROR", "message": message, "files": files})
-            return
+    if aplicar and any(inserted_keys_full.values()):
+        yield "Iniciando verificación post-aplicación...\n"
+        for emp in sorted(inserted_keys_full.keys()):
+            keys_set = inserted_keys_full.get(emp, set())
+            if not keys_set:
+                continue
+
+            server_for_emp = apply_import_servers.get(emp) or SERVER_RESOLVER.generar_server(emp, "CC")
+            if not server_for_emp:
+                msg = f"{emp}: no se pudo determinar servidor para verificación."
+                verification_messages.append(msg)
+                _record_status(emp, "import", False, msg)
+                continue
+
+            cmd_import_hsh = build_cmd("scripts.importar_all", server_for_emp, emp, "hsh", "--usecase", "hsh_crear_tag")
+            rc_import = yield from _stream_script(f"VER-IMPORT-{emp}", cmd_import_hsh)
+            if rc_import != 0:
+                msg = f"{emp}: importación HSH falló (rc={rc_import})."
+                verification_messages.append(msg)
+                _record_status(emp, "import", False, msg)
+                continue
+            else:
+                msg = f"{emp}: importación HSH completada."
+                verification_messages.append(msg)
+                _record_status(emp, "import", True, msg)
+
+            cmd_convert_hsh = build_cmd("scripts.Convertir_all", emp, "Validar_HSH", "--only", "hsh")
+            rc_convert = yield from _stream_script(f"VER-CONVERT-{emp}", cmd_convert_hsh)
+            if rc_convert != 0:
+                msg = f"{emp}: conversión HSH falló (rc={rc_convert})."
+                verification_messages.append(msg)
+                _record_status(emp, "convert", False, msg)
+                continue
+            else:
+                msg = f"{emp}: conversión HSH completada."
+                verification_messages.append(msg)
+                _record_status(emp, "convert", True, msg)
+
+            present, missing = _check_local_keys(emp, keys_set)
+            if missing:
+                msg = f"{emp}: faltan en LookupTables -> {', '.join(missing)}"
+                verification_messages.append(msg)
+                _record_status(emp, "lookup", False, msg)
+            else:
+                msg = f"{emp}: LookupTables actualizadas para {len(present)} claves."
+                verification_messages.append(msg)
+                _record_status(emp, "lookup", True, msg)
+
+        scada_lines, scada_failed = _apply_scada_updates_for_web()
+        if scada_lines:
+            verification_messages.extend(scada_lines)
+        if not scada_lines and inserted_keys_map:
+            _record_status(empresa, "scada", False, "No se ejecutaron actualizaciones SCADA.")
+
+        pi_lines, pi_failed = _collect_pi_verification()
+        if pi_lines:
+            verification_messages.extend(pi_lines)
+
+        verification_summary = _build_verification_summary()
+        if verification_summary:
+            verification_messages.extend(verification_summary)
+
+        extra_messages.extend(verification_messages)
 
     normalized_files: list[str] = []
-    for raw_path in report_paths | info_paths:
+    for raw_path in report_paths | info_paths | extra_paths:
         if not raw_path:
             continue
         norm = os.path.normpath(raw_path)
@@ -256,6 +904,8 @@ def crear_tags_pipeline(
     extra_payload: dict[str, Any] = {"details": extra_messages}
     if report_excel_path:
         extra_payload["report_path"] = report_excel_path
+    if verification_summary:
+        extra_payload["verification_summary"] = verification_summary
     _store_result("SUCCESS", payload["message"], files=files, extra=extra_payload)
     yield _result_line(payload)
 
@@ -283,6 +933,7 @@ def load_crear_result_preview(sheet: str | None = None, limit: int = 500) -> dic
         "message": result.message,
         "files": result.files,
         "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "verification_summary": result.extra.get("verification_summary", []) if isinstance(result.extra, dict) else [],
         "sheets": [],
         "active_sheet": None,
         "columns": [],
@@ -356,3 +1007,12 @@ def load_crear_result_preview(sheet: str | None = None, limit: int = 500) -> dic
         return base_payload
     finally:
         workbook.close()
+
+
+class _DummyApp:
+    def __init__(self, env_map: dict[str, str], base_dir: str) -> None:
+        self._env_map = env_map
+        self.base_dir = base_dir
+
+    def secure_env(self) -> dict[str, str]:
+        return self._env_map
