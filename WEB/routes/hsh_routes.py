@@ -62,7 +62,6 @@ def ejecutar_hsh_crear(
         raise HTTPException(status_code=500, detail="No fue posible almacenar el archivo para su procesamiento.")
 
     aplicar_flag = aplicar is not None and aplicar != ""
-    force_refresh = True
     archivo_nombre = archivo.filename
 
     def _pipeline():
@@ -73,7 +72,6 @@ def ejecutar_hsh_crear(
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
                 aplicar=aplicar_flag,
-                forzar_actualizacion=force_refresh,
             )
         finally:
             try:
