@@ -25,8 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
   const resultBaseUrl =
     form.dataset.resultUrl || "/buscar/key/result/data";
-  const fileDownloadBase =
-    form.dataset.fileDownload || "/buscar/key/result/download";
+  const fileDownloadBase = form.dataset.fileDownload || "";
   const origin = window.location.origin;
 
   const buildResultUrl = (sheetValue) => {
@@ -49,8 +48,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  const buildDownloadUrl = (filePath) =>
-    `${fileDownloadBase}?path=${encodeURIComponent(filePath)}`;
+  const buildDownloadUrl = (filePath) => {
+    if (!fileDownloadBase || !filePath) return "";
+    try {
+      const url = new URL(fileDownloadBase, origin);
+      if (!url.searchParams.has("path")) {
+        url.searchParams.append("path", filePath);
+      } else {
+        url.searchParams.set("path", filePath);
+      }
+      return url.toString();
+    } catch {
+      const separator = fileDownloadBase.includes("?") ? "&" : "?";
+      return `${fileDownloadBase}${separator}path=${encodeURIComponent(
+        filePath,
+      )}`;
+    }
+  };
 
   const sheetCache = new Map();
   let availableSheets = [];
@@ -163,12 +177,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const ul = document.createElement("ul");
     list.forEach((filePath) => {
       const li = document.createElement("li");
-      const link = document.createElement("a");
-      link.href = buildDownloadUrl(filePath);
-      link.textContent = filePath;
-      link.target = "_blank";
-      link.rel = "noopener";
-      li.appendChild(link);
+      const href = buildDownloadUrl(filePath);
+      if (href) {
+        const link = document.createElement("a");
+        link.href = href;
+        link.textContent = filePath;
+        link.target = "_blank";
+        link.rel = "noopener";
+        li.appendChild(link);
+      } else {
+        const span = document.createElement("span");
+        span.textContent = filePath;
+        li.appendChild(span);
+      }
       ul.appendChild(li);
     });
     fragment.appendChild(ul);

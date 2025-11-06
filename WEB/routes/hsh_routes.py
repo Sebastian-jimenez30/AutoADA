@@ -5,7 +5,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
@@ -85,16 +85,14 @@ def ejecutar_hsh_crear(
 
 
 @router.get("/hsh/crear/result")
-def obtener_hsh_crear_result():
-    result = hsh_controller.get_last_crear_result()
-    if not result:
+def obtener_hsh_crear_result(
+    sheet: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    data = hsh_controller.load_crear_result_preview(sheet=sheet, limit=limit)
+    if data is None:
         raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
-    return {
-        "status": result.status,
-        "message": result.message,
-        "files": result.files,
-        "extra": result.extra,
-    }
+    return data
 
 
 @router.get("/hsh/crear/result/download")

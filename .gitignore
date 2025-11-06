@@ -1,0 +1,35 @@
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# Build y distribución
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Archivos de base de datos locales
+db/
+
+# Configuración de IDEs y editores
+.vscode/
+.idea/
+*.swp
+
+# Logs y temporales
+*.log
+*.tmp
+*.bak
+*.pid
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+out/

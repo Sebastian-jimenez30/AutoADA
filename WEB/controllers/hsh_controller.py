@@ -6,6 +6,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generator, Iterable, Optional
+from urllib.parse import quote
 
 from services.vault_service import VaultService
 from services.server_resolver import ServerResolver
@@ -13,11 +14,14 @@ from utils.cli import build_cmd
 from utils.data_checks import find_mode_data_ready
 
 import subprocess
+from openpyxl import load_workbook
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUTOADA_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "..", "AutoADA"))
 OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 HSH_OUTPUT_DIR = os.path.join(OUT_ROOT, "HSH")
+CREAR_TAG_DIR = os.path.join(OUT_ROOT, "crear_tag")
+CREAR_TAG_REPORT = os.path.join(CREAR_TAG_DIR, "reporte_crear_tag.xlsx")
 
 SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
 SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
@@ -157,11 +161,15 @@ def crear_tags_pipeline(
     report_paths: set[str] = set()
     info_paths: set[str] = set()
     extra_messages: list[str] = []
+    report_excel_path: Optional[str] = None
 
     def _collect_marker(line: str):
-        nonlocal report_paths, info_paths, extra_messages
+        nonlocal report_paths, info_paths, extra_messages, report_excel_path
         if line.startswith("REPORT_PATH:"):
-            report_paths.add(line.split(":", 1)[1].strip())
+            path = line.split(":", 1)[1].strip()
+            report_paths.add(path)
+            if path.lower().endswith("reporte_crear_tag.xlsx"):
+                report_excel_path = path
         elif line.startswith("INFO_PATH:"):
             info_paths.add(line.split(":", 1)[1].strip())
         elif line.startswith("QUERY_PATH:"):
@@ -224,16 +232,127 @@ def crear_tags_pipeline(
             yield _result_line({"status": "ERROR", "message": message, "files": files})
             return
 
-    files = sorted({os.path.normpath(p) for p in report_paths | info_paths if p})
+    normalized_files: list[str] = []
+    for raw_path in report_paths | info_paths:
+        if not raw_path:
+            continue
+        norm = os.path.normpath(raw_path)
+        normalized_files.append(norm)
+        if report_excel_path is None and norm.lower().endswith("reporte_crear_tag.xlsx"):
+            report_excel_path = norm
+    files = sorted(set(normalized_files))
+
+    if not report_excel_path:
+        candidate = os.path.normpath(CREAR_TAG_REPORT)
+        if os.path.isfile(candidate):
+            report_excel_path = candidate
+
     payload = {
         "status": "SUCCESS",
         "message": "Proceso de creación de tags completado.",
         "files": files,
         "details": extra_messages,
     }
-    _store_result("SUCCESS", payload["message"], files=files, extra={"details": extra_messages})
+    extra_payload: dict[str, Any] = {"details": extra_messages}
+    if report_excel_path:
+        extra_payload["report_path"] = report_excel_path
+    _store_result("SUCCESS", payload["message"], files=files, extra=extra_payload)
     yield _result_line(payload)
 
 
 def get_last_crear_result() -> CrearResult | None:
     return last_crear_result
+
+
+def load_crear_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_crear_result
+    if result is None:
+        return None
+
+    report_path = result.extra.get("report_path") if isinstance(result.extra, dict) else None
+    if report_path:
+        report_path = os.path.normpath(report_path)
+        if not os.path.isabs(report_path):
+            report_path = os.path.normpath(os.path.join(AUTOADA_DIR, report_path))
+    if not report_path or not os.path.isfile(report_path):
+        fallback = os.path.normpath(CREAR_TAG_REPORT)
+        report_path = fallback if os.path.isfile(fallback) else None
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+    }
+
+    if not report_path or not os.path.isfile(report_path):
+        return base_payload
+
+    workbook = load_workbook(report_path, read_only=True, data_only=True)
+    try:
+        sheet_names = list(workbook.sheetnames)
+        if not sheet_names:
+            return base_payload
+
+        active_sheet = sheet if sheet in sheet_names else sheet_names[0]
+        worksheet = workbook[active_sheet]
+        rows_iter = worksheet.iter_rows(values_only=True)
+
+        try:
+            headers_raw = next(rows_iter)
+        except StopIteration:
+            base_payload["sheets"] = sheet_names
+            base_payload["active_sheet"] = active_sheet
+            return base_payload
+
+        headers: list[str] = []
+        for idx, header in enumerate(headers_raw or (), start=1):
+            if isinstance(header, str):
+                clean = header.strip()
+                headers.append(clean if clean else f"Columna {idx}")
+            elif header is None:
+                headers.append(f"Columna {idx}")
+            else:
+                headers.append(str(header))
+
+        preview_rows: list[dict[str, Any]] = []
+        row_count = 0
+        has_more = False
+
+        for row in rows_iter:
+            row_count += 1
+            row_dict: dict[str, Any] = {}
+            for col_idx, header in enumerate(headers):
+                value = row[col_idx] if col_idx < len(row) else None
+                row_dict[header] = value
+            if row_count <= limit:
+                preview_rows.append(row_dict)
+            else:
+                has_more = True
+                break
+
+        download_url = f"/hsh/crear/result/download?path={quote(report_path)}"
+
+        base_payload.update(
+            {
+                "sheets": sheet_names,
+                "active_sheet": active_sheet,
+                "columns": headers,
+                "rows": preview_rows,
+                "total": row_count,
+                "has_more": has_more,
+                "download_url": download_url,
+                "report_path": report_path,
+            }
+        )
+        return base_payload
+    finally:
+        workbook.close()
