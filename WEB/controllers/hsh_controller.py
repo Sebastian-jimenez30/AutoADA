@@ -526,11 +526,24 @@ def crear_tags_pipeline(
     inserted_keys_full: dict[str, set[str]] = {}
     inserted_keys_map: dict[str, dict[str, set[str]]] = {}
     inserted_tags_full: dict[str, set[str]] = {}
+    inserted_pairs_map: dict[str, list[tuple[str, str]]] = {}
+    pending_apply_keys: dict[str, list[str]] = {}
     apply_import_servers: dict[str, str] = {}
     hsh_servers_used: dict[str, str] = {}
     last_sca_host_seen: Optional[str] = None
     verification_status: dict[str, dict[str, dict[str, Any]]] = {}
     verification_order: list[str] = []
+
+    def _split_tag_name(name: str) -> tuple[str, str]:
+        base = str(name or "").strip()
+        suffix = ""
+        if "." in base:
+            base, suffix = base.rsplit(".", 1)
+        return base, suffix
+
+    def _derive_key_from_base(base: str) -> str:
+        clean = base.strip()
+        return clean.rsplit(":", 1)[0] if ":" in clean else clean
 
     def _ensure_status(emp: str) -> dict[str, dict[str, Any]]:
         emp_u = emp.upper()
@@ -777,10 +790,172 @@ def crear_tags_pipeline(
                 prefixes.append(pref)
         return [p for p in prefixes if p]
 
-    def _collect_pi_verification(tags_for_pi: Iterable[str]) -> tuple[list[str], bool]:
+    def _prepare_pi_sheet_rows(
+        pi_result: PiSnapshotResult | None,
+        expected_tags: dict[str, set[str]],
+        pairs_lookup: dict[str, list[tuple[str, str]]],
+    ) -> tuple[list[str], list[list[str]]] | None:
+        snapshot_map = {str(emp).upper(): rows or [] for emp, rows in (pi_result.snapshot_map.items() if pi_result else [])}
+        missing_map = {str(emp).upper(): values or [] for emp, values in (pi_result.missing_map.items() if pi_result else [])}
+        normalized_expected: dict[str, set[str]] = {}
+        for emp, tags in expected_tags.items():
+            tag_set = {str(tag).strip() for tag in (tags or set()) if str(tag).strip()}
+            if tag_set:
+                normalized_expected[emp.upper()] = tag_set
+        normalized_pairs: dict[str, dict[str, str]] = {}
+        for emp, pairs in pairs_lookup.items():
+            emp_u = emp.upper()
+            mapping = normalized_pairs.setdefault(emp_u, {})
+            for key_name, tag_name in pairs or []:
+                base_tag, _ = _split_tag_name(tag_name)
+                if base_tag:
+                    mapping[base_tag] = key_name
+
+        suffix_order: list[str] = []
+        suffix_labels: dict[str, str] = {}
+        suffix_positions: dict[str, int] = {}
+
+        def _normalize_suffix(raw: str) -> tuple[str, str]:
+            token = (raw or "").strip()
+            if not token:
+                return "VALUE", "Value"
+            token_upper = token.upper()
+            if token_upper == "VALUE":
+                return "VALUE", "Value"
+            if token_upper == "ESTIMATED":
+                return "ESTIMATED", "Estimated"
+            if token_upper in {"STATE", "STATUS"}:
+                return token_upper, token_upper.capitalize()
+            if token_upper in {"Q", "P"}:
+                return token_upper, token_upper
+            return token_upper, token
+
+        def _register_suffix(raw: str) -> str:
+            key, label = _normalize_suffix(raw)
+            if key not in suffix_labels:
+                suffix_labels[key] = label
+                suffix_order.append(key)
+                suffix_positions[key] = len(suffix_positions)
+            return key
+
+        pi_entries: dict[tuple[str, str], dict[str, Any]] = {}
+
+        def _entry(emp_u: str, base_tag: str) -> dict[str, Any]:
+            key = (emp_u, base_tag)
+            if key not in pi_entries:
+                mapped_key = normalized_pairs.get(emp_u, {}).get(base_tag)
+                pi_entries[key] = {
+                    "empresa": emp_u,
+                    "base_tag": base_tag,
+                    "key": mapped_key or _derive_key_from_base(base_tag),
+                    "values": {},
+                    "expected": set(),
+                }
+            else:
+                entry = pi_entries[key]
+                if not entry.get("key"):
+                    mapped_key = normalized_pairs.get(emp_u, {}).get(base_tag)
+                    if mapped_key:
+                        entry["key"] = mapped_key
+            return pi_entries[key]
+
+        for emp, tags in sorted(normalized_expected.items()):
+            for tag_name in sorted(tags):
+                base_tag, suffix_raw = _split_tag_name(tag_name)
+                suffix_key = _register_suffix(suffix_raw)
+                entry = _entry(emp, base_tag)
+                expected: set[str] = entry["expected"]
+                expected.add(suffix_key)
+
+        for emp, rows in sorted(snapshot_map.items()):
+            for row in rows:
+                name = str(row.get("Name") or "").strip()
+                if not name:
+                    continue
+                base_tag, suffix_raw = _split_tag_name(name)
+                suffix_key = _register_suffix(suffix_raw)
+                entry = _entry(emp, base_tag)
+                values: dict[str, str] = entry["values"]
+                value_raw = row.get("Value")
+                values[suffix_key] = "" if value_raw is None else str(value_raw)
+                expected: set[str] = entry["expected"]
+                expected.discard(suffix_key)
+
+        for emp, missing in sorted(missing_map.items()):
+            for tag_name in missing:
+                base_tag, suffix_raw = _split_tag_name(tag_name)
+                suffix_key = _register_suffix(suffix_raw)
+                entry = _entry(emp, base_tag)
+                values: dict[str, str] = entry["values"]
+                if suffix_key not in values:
+                    values[suffix_key] = "No Data"
+                expected: set[str] = entry["expected"]
+                expected.discard(suffix_key)
+
+        if not pi_entries:
+            return None
+
+        suffix_priority = {"Q": 0, "P": 1, "VALUE": 2, "ESTIMATED": 3, "STATE": 4, "STATUS": 5}
+        ordered_suffixes = sorted(
+            suffix_order,
+            key=lambda key: (suffix_priority.get(key, 100), suffix_positions.get(key, 0)),
+        )
+        if not ordered_suffixes:
+            ordered_suffixes = ["VALUE"]
+            suffix_labels.setdefault("VALUE", "Value")
+
+        headers = ["Empresa", "Key", "Tag"] + [suffix_labels[key] for key in ordered_suffixes]
+        rows_output: list[list[str]] = []
+        for (emp, base_tag), entry in sorted(pi_entries.items(), key=lambda item: (item[0][0], item[0][1])):
+            values = entry["values"]
+            expected = entry["expected"]
+            key_name = entry.get("key") or _derive_key_from_base(base_tag)
+            row = [emp, key_name, base_tag]
+            for suffix_key in ordered_suffixes:
+                if suffix_key in values:
+                    row.append(values[suffix_key])
+                elif suffix_key in expected:
+                    row.append("No Data")
+                else:
+                    row.append("")
+            rows_output.append(row)
+
+        return headers, rows_output
+
+    def _update_pi_sheet(
+        report_path: str,
+        pi_result: PiSnapshotResult,
+        expected_tags: dict[str, set[str]],
+        pairs_lookup: dict[str, list[tuple[str, str]]],
+    ) -> None:
+        payload = _prepare_pi_sheet_rows(pi_result, expected_tags, pairs_lookup)
+        if not payload:
+            return
+        headers, rows = payload
+        target_path = os.path.normpath(report_path)
+        if not os.path.isabs(target_path):
+            target_path = os.path.normpath(os.path.join(AUTOADA_DIR, target_path))
+        if not os.path.isfile(target_path):
+            return
+        if load_workbook is None:
+            raise RuntimeError("openpyxl no está disponible para actualizar el reporte.")
+        workbook = load_workbook(target_path)
+        try:
+            if "PI" in workbook.sheetnames:
+                ws_existing = workbook["PI"]
+                workbook.remove(ws_existing)
+            ws_pi = workbook.create_sheet("PI")
+            ws_pi.append(headers)
+            for row in rows:
+                ws_pi.append(row)
+            workbook.save(target_path)
+        finally:
+            workbook.close()
+
+    def _collect_pi_verification(tags_for_pi: Iterable[str]) -> tuple[list[str], bool, PiSnapshotResult | None]:
         tags_set = {tag.strip() for tag in tags_for_pi if tag and tag.strip()}
         if not tags_set:
-            return [], False
+            return [], False, None
 
         dummy_app = _DummyApp(env, AUTOADA_DIR)
         lines: list[str] = []
@@ -815,18 +990,17 @@ def crear_tags_pipeline(
                 lines.append(f"[PI][WARN] {msg}")
         for json_line in result_pi.lines:
             lines.append(f"[PI][RAW] {json_line}")
-        if result_pi.snapshot_map:
-            rows = result_pi.snapshot_map.get(emp_upper, [])
-            for row in rows:
-                name = row.get("Name", "?")
-                value = row.get("Value", "?")
-                timestamp = row.get("Timestamp", "?")
-                lines.append(f"[PI][DATA] {name} = {value} @ {timestamp}")
+        snapshot_rows = result_pi.snapshot_map.get(emp_upper, []) if result_pi.snapshot_map else []
+        for row in snapshot_rows:
+            name = row.get("Name", "?")
+            value = row.get("Value", "?")
+            timestamp = row.get("Timestamp", "?")
+            lines.append(f"[PI][DATA] {name} = {value} @ {timestamp}")
         if result_pi.missing_map:
             missing = result_pi.missing_map.get(emp_upper, [])
             if missing:
                 lines.append(f"[PI][MISSING] {', '.join(missing)}")
-        return lines, result_pi.has_failures
+        return lines, result_pi.has_failures, result_pi
 
     def _handle_marker(line: str):
         nonlocal report_excel_path, last_sca_host_seen
@@ -890,6 +1064,7 @@ def crear_tags_pipeline(
                     for full_key in keys:
                         base, dot, suffix = full_key.partition(".")
                         base_map.setdefault(base, set()).add(suffix if dot else "")
+                    pending_apply_keys.setdefault(emp_key, []).extend(keys)
             except ValueError:
                 pass
         elif line.startswith("APPLY_TAGS:"):
@@ -900,6 +1075,28 @@ def crear_tags_pipeline(
                 tags = [t.strip() for t in tags_part.split(",") if t.strip()]
                 if tags:
                     inserted_tags_full.setdefault(emp_key, set()).update(tags)
+                    pending_keys = pending_apply_keys.get(emp_key, [])
+                    leftover_tags = tags
+                    if pending_keys:
+                        pair_count = min(len(pending_keys), len(tags))
+                        if pair_count:
+                            pairs = list(zip(pending_keys[:pair_count], tags[:pair_count]))
+                            inserted_pairs_map.setdefault(emp_key, []).extend(pairs)
+                        pending_keys = pending_keys[pair_count:]
+                        if pending_keys:
+                            pending_apply_keys[emp_key] = pending_keys
+                        else:
+                            pending_apply_keys.pop(emp_key, None)
+                        leftover_tags = tags[pair_count:]
+                    if leftover_tags:
+                        derived_pairs: list[tuple[str, str]] = []
+                        for tag_name in leftover_tags:
+                            base_tag, _ = _split_tag_name(tag_name)
+                            derived_key = _derive_key_from_base(base_tag)
+                            if derived_key:
+                                derived_pairs.append((derived_key, tag_name))
+                        if derived_pairs:
+                            inserted_pairs_map.setdefault(emp_key, []).extend(derived_pairs)
             except ValueError:
                 pass
         elif line.startswith("APPLY_OK:"):
@@ -1045,12 +1242,18 @@ def crear_tags_pipeline(
             verification_failed = True
 
         tags_for_pi = inserted_tags_full.get(empresa, set())
-        pi_lines, pi_failed = _collect_pi_verification(tags_for_pi)
+        pi_lines, pi_failed, pi_result = _collect_pi_verification(tags_for_pi)
         for line in pi_lines:
             yield line + "\n"
             verification_messages.append(line)
         if pi_failed:
             verification_failed = True
+        if pi_result and report_excel_path:
+            try:
+                _update_pi_sheet(report_excel_path, pi_result, inserted_tags_full, inserted_pairs_map)
+            except Exception as exc:
+                msg = f"PI: no se pudo actualizar la hoja PI ({exc})"
+                verification_messages.append(msg)
 
         verification_summary = _build_verification_summary()
         if verification_summary:
