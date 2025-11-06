@@ -623,13 +623,9 @@ def crear_tags_pipeline(
                 prefixes.append(pref)
         return [p for p in prefixes if p]
 
-    def _collect_pi_verification() -> tuple[list[str], bool]:
-        tags_by_empresa = {
-            emp: set(tags)
-            for emp, tags in inserted_tags_full.items()
-            if tags
-        }
-        if not tags_by_empresa:
+    def _collect_pi_verification(tags_for_pi: Iterable[str]) -> tuple[list[str], bool]:
+        tags_set = {tag.strip() for tag in tags_for_pi if tag and tag.strip()}
+        if not tags_set:
             return [], False
 
         dummy_app = _DummyApp(env, AUTOADA_DIR)
@@ -641,13 +637,14 @@ def crear_tags_pipeline(
         def _status_hook(emp: str, step: str, ok: Optional[bool], message: Optional[str]) -> None:
             _record_status(emp, "pi", ok, message)
 
-        server_map = {}
-        for emp in tags_by_empresa.keys():
-            server_map[emp] = apply_import_servers.get(emp) or SERVER_RESOLVER.generar_server(emp, "CC")
+        emp_upper = empresa.upper()
+        server_map = {
+            emp_upper: apply_import_servers.get(emp_upper) or SERVER_RESOLVER.generar_server(emp_upper, "CC")
+        }
 
         result_pi = collect_pi_snapshots(
             app=dummy_app,
-            tags_by_empresa=tags_by_empresa,
+            tags_by_empresa={emp_upper: tags_set},
             server_map=server_map,
             console_write=_console_write,
             record_status=_status_hook,
@@ -815,6 +812,7 @@ def crear_tags_pipeline(
 
     verification_messages: list[str] = []
     verification_summary: list[str] = []
+    verification_failed = False
 
     if aplicar and any(inserted_keys_full.values()):
         yield "Iniciando verificación post-aplicación...\n"
@@ -828,6 +826,7 @@ def crear_tags_pipeline(
                 msg = f"{emp}: no se pudo determinar servidor para verificación."
                 verification_messages.append(msg)
                 _record_status(emp, "import", False, msg)
+                verification_failed = True
                 continue
 
             cmd_import_hsh = build_cmd("scripts.importar_all", server_for_emp, emp, "hsh", "--usecase", "hsh_crear_tag")
@@ -836,6 +835,7 @@ def crear_tags_pipeline(
                 msg = f"{emp}: importación HSH falló (rc={rc_import})."
                 verification_messages.append(msg)
                 _record_status(emp, "import", False, msg)
+                verification_failed = True
                 continue
             else:
                 msg = f"{emp}: importación HSH completada."
@@ -848,6 +848,7 @@ def crear_tags_pipeline(
                 msg = f"{emp}: conversión HSH falló (rc={rc_convert})."
                 verification_messages.append(msg)
                 _record_status(emp, "convert", False, msg)
+                verification_failed = True
                 continue
             else:
                 msg = f"{emp}: conversión HSH completada."
@@ -859,6 +860,7 @@ def crear_tags_pipeline(
                 msg = f"{emp}: faltan en LookupTables -> {', '.join(missing)}"
                 verification_messages.append(msg)
                 _record_status(emp, "lookup", False, msg)
+                verification_failed = True
             else:
                 msg = f"{emp}: LookupTables actualizadas para {len(present)} claves."
                 verification_messages.append(msg)
@@ -869,10 +871,16 @@ def crear_tags_pipeline(
             verification_messages.extend(scada_lines)
         if not scada_lines and inserted_keys_map:
             _record_status(empresa, "scada", False, "No se ejecutaron actualizaciones SCADA.")
+            verification_failed = True
+        if scada_failed:
+            verification_failed = True
 
-        pi_lines, pi_failed = _collect_pi_verification()
+        tags_for_pi = inserted_tags_full.get(empresa, set())
+        pi_lines, pi_failed = _collect_pi_verification(tags_for_pi)
         if pi_lines:
             verification_messages.extend(pi_lines)
+        if pi_failed:
+            verification_failed = True
 
         verification_summary = _build_verification_summary()
         if verification_summary:
@@ -895,9 +903,15 @@ def crear_tags_pipeline(
         if os.path.isfile(candidate):
             report_excel_path = candidate
 
+    final_status = "SUCCESS"
+    final_message = "Proceso de creación de tags completado."
+    if verification_failed:
+        final_status = "ERROR"
+        final_message = "Proceso completado con errores durante la verificación."
+
     payload = {
-        "status": "SUCCESS",
-        "message": "Proceso de creación de tags completado.",
+        "status": final_status,
+        "message": final_message,
         "files": files,
         "details": extra_messages,
     }
@@ -906,7 +920,8 @@ def crear_tags_pipeline(
         extra_payload["report_path"] = report_excel_path
     if verification_summary:
         extra_payload["verification_summary"] = verification_summary
-    _store_result("SUCCESS", payload["message"], files=files, extra=extra_payload)
+    extra_payload["verification_failed"] = verification_failed
+    _store_result(final_status, payload["message"], files=files, extra=extra_payload)
     yield _result_line(payload)
 
 
