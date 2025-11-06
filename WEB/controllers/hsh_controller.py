@@ -459,7 +459,7 @@ def crear_tags_pipeline(
             return [], False
 
         if sshserver is None:
-            msg = "SCADA: función sshserver no disponible en este entorno."
+            msg = "SCADA: función sshserver no disponible."
             for emp in inserted_keys_map.keys():
                 _record_status(emp, "scada", False, msg)
             return [msg], True
@@ -472,7 +472,7 @@ def crear_tags_pipeline(
         log_dir.mkdir(parents=True, exist_ok=True)
 
         if Logger is None:
-            msg = "SCADA: Logger no disponible; se omite actualización."
+            msg = "SCADA: Logger no disponible."
             for emp in inserted_keys_map.keys():
                 _record_status(emp, "scada", False, msg)
             for key, value in prev_env.items():
@@ -499,43 +499,42 @@ def crear_tags_pipeline(
         has_fail = False
         analog_suffixes = {"VALUE", "ESTIMATED"}
 
-        def _unique(seq: Iterable[str]) -> list[str]:
-            seen: set[str] = set()
-            items: list[str] = []
-            for item in seq:
-                if not item:
-                    continue
-                if item not in seen:
-                    seen.add(item)
-                    items.append(item)
-            return items
-
         try:
             for emp_u, base_map in inserted_keys_map.items():
                 if not base_map:
                     continue
 
-                host_candidates = []
-                if emp_u in apply_import_servers:
-                    host_candidates.append(apply_import_servers[emp_u])
-                if emp_u in hsh_servers_used:
-                    host_candidates.append(hsh_servers_used[emp_u])
-                host_candidates.extend(SCADA_HOSTS_FULL.get(emp_u, []) or [])
-                default_host = SERVER_RESOLVER.generar_server(emp_u, "CC")
-                if default_host:
-                    host_candidates.append(default_host)
-                hosts = _unique(host_candidates)
+                domain_hosts: Dict[str, Set[str]] = {"CC": set(), "QA": set()}
+                for host in SCADA_HOSTS_FULL.get(emp_u, []) or []:
+                    host = (host or "").strip()
+                    if not host:
+                        continue
+                    domain = "QA" if "qds" in host.lower() else "CC"
+                    domain_hosts.setdefault(domain, set()).add(host)
 
-                if not hosts:
+                for dom in ("CC", "QA"):
+                    try:
+                        host = SERVER_RESOLVER.generar_server(emp_u, dom)
+                    except Exception:
+                        host = None
+                    if host:
+                        domain_hosts.setdefault(dom, set()).add(host)
+
+                host_entries = [
+                    (dom, host)
+                    for dom in ("CC", "QA")
+                    for host in sorted(domain_hosts.get(dom, set()))
+                ]
+                if not host_entries:
                     msg = f"{emp_u}: no se encontraron servidores SCADA configurados."
                     messages.append(msg)
                     _record_status(emp_u, "scada", False, msg)
                     has_fail = True
                     continue
 
-                for host in hosts:
-                    client = None
+                for domain_label, host in host_entries:
                     label = f"{emp_u} ({host})"
+                    client = None
                     try:
                         client = sshserver(host, logger, logger_console)
                         if client is None:
