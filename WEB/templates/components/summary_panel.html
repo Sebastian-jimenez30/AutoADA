@@ -1,0 +1,24 @@
+{% macro summary_panel(
+    wrapper_id="summaryPanel",
+    list_id="summaryList",
+    status_id="summaryStatus",
+    loader_id="summaryLoader",
+    empty_id="summaryEmpty"
+) -%}
+<div id="{{ wrapper_id }}" class="summary-panel" data-state="idle">
+  <div class="summary-header">
+    <h3>Resumen del proceso</h3>
+    <span id="{{ status_id }}" class="summary-status" data-variant="idle">En espera</span>
+  </div>
+  <div class="summary-body">
+    <div class="summary-loader" id="{{ loader_id }}" hidden>
+      <span class="summary-loader__spinner" aria-hidden="true"></span>
+      <p>Procesando...</p>
+    </div>
+    <div id="{{ empty_id }}" class="summary-empty">
+      Los mensajes generales aparecerán aquí durante la ejecución.
+    </div>
+    <ul id="{{ list_id }}" class="summary-messages" aria-live="polite"></ul>
+  </div>
+</div>
+{%- endmacro %}

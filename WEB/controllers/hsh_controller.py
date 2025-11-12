@@ -468,6 +468,7 @@ def crear_tags_pipeline(
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
 
     yield f"Iniciando proceso Crear Tag HSH para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
+    yield from _yield_summary(f"{empresa}: proceso iniciado")
 
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
         global last_crear_result
@@ -517,6 +518,7 @@ def crear_tags_pipeline(
     needs_update = True
     yield f"Datos locales disponibles para {empresa}: {ready} (se forzará actualización previa)\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
+    yield from _yield_summary(f"{empresa}: preparando datos locales")
 
     report_paths: set[str] = set()
     info_paths: set[str] = set()
@@ -622,6 +624,21 @@ def crear_tags_pipeline(
         while lines and not lines[-1]:
             lines.pop()
         return lines
+
+    def _summary_line(message: str, variant: str = "info") -> str | None:
+        clean = (message or "").strip()
+        if not clean:
+            return None
+        normalized = variant.lower()
+        if normalized not in {"info", "success", "warning", "error"}:
+            normalized = "info"
+        extra_messages.append(clean)
+        return f"SUMMARY::{clean}|{normalized}\n"
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line(message, variant)
+        if line:
+            yield line
 
     def _apply_scada_updates_for_web() -> tuple[list[str], bool]:
         if not inserted_keys_map:
@@ -1131,6 +1148,7 @@ def crear_tags_pipeline(
             _store_result("ERROR", message)
             yield _result_line({"status": "ERROR", "message": message})
             return
+        yield from _yield_summary("Actualizando datos locales (importar/convertir)")
 
         pre_commands: list[tuple[str, list[str]] | None] = [
             ("IMPORT-PRINCIPAL", build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag")),
@@ -1147,15 +1165,19 @@ def crear_tags_pipeline(
             label, cmd = entry
             rc_pre = yield from _stream_script(label, cmd)
             if rc_pre != 0:
+                target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
                 message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+                yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
                 _store_result("ERROR", message)
                 yield _result_line({"status": "ERROR", "message": message})
                 return
+        yield from _yield_summary("Datos locales sincronizados", "success")
 
     # Ejecución principal del script
     for target_empresa, target_respaldo, target_server in run_targets:
         accion = "Insertando" if aplicar else "Generando reporte"
         yield f"{accion} para empresa {target_empresa} (servidor {target_server})...\n"
+        yield from _yield_summary(f"{target_empresa}: {accion.lower()} en curso")
 
         if target_empresa:
             apply_import_servers.setdefault(target_empresa.upper(), target_server)
@@ -1172,9 +1194,11 @@ def crear_tags_pipeline(
         if rc != 0:
             message = f"El script hsh_crear_tag para {target_empresa} finalizó con errores (rc={rc})."
             files = sorted(report_paths | info_paths)
+            yield from _yield_summary(f"{target_empresa}: {accion.lower()} falló", "error")
             _store_result("ERROR", message, files=files)
             yield _result_line({"status": "ERROR", "message": message, "files": files})
             return
+        yield from _yield_summary(f"{target_empresa}: {accion.lower()} completado", "success")
 
     verification_messages: list[str] = []
     verification_summary: list[str] = []
@@ -1182,6 +1206,7 @@ def crear_tags_pipeline(
 
     if aplicar and any(inserted_keys_full.values()):
         yield "Iniciando verificación post-aplicación...\n"
+        yield from _yield_summary(f"{empresa}: iniciando verificación post-aplicación")
         for emp in sorted(inserted_keys_full.keys()):
             keys_set = inserted_keys_full.get(emp, set())
             if not keys_set:
@@ -1202,11 +1227,13 @@ def crear_tags_pipeline(
                 verification_messages.append(msg)
                 _record_status(emp, "import", False, msg)
                 verification_failed = True
+                yield from _yield_summary(msg, "error")
                 continue
             else:
                 msg = f"{emp}: importación HSH completada."
                 verification_messages.append(msg)
                 _record_status(emp, "import", True, msg)
+                yield from _yield_summary(msg, "success")
 
             cmd_convert_hsh = build_cmd("scripts.Convertir_all", emp, "Validar_HSH", "--only", "hsh")
             rc_convert = yield from _stream_script(f"VER-CONVERT-{emp}", cmd_convert_hsh)
@@ -1215,11 +1242,13 @@ def crear_tags_pipeline(
                 verification_messages.append(msg)
                 _record_status(emp, "convert", False, msg)
                 verification_failed = True
+                yield from _yield_summary(msg, "error")
                 continue
             else:
                 msg = f"{emp}: conversión HSH completada."
                 verification_messages.append(msg)
                 _record_status(emp, "convert", True, msg)
+                yield from _yield_summary(msg, "success")
 
             present, missing = _check_local_keys(emp, keys_set)
             if missing:
@@ -1227,10 +1256,12 @@ def crear_tags_pipeline(
                 verification_messages.append(msg)
                 _record_status(emp, "lookup", False, msg)
                 verification_failed = True
+                yield from _yield_summary(msg, "warning")
             else:
                 msg = f"{emp}: LookupTables actualizadas para {len(present)} claves."
                 verification_messages.append(msg)
                 _record_status(emp, "lookup", True, msg)
+                yield from _yield_summary(msg, "success")
 
         scada_lines, scada_failed = _apply_scada_updates_for_web()
         if scada_lines:
@@ -1240,6 +1271,12 @@ def crear_tags_pipeline(
             verification_failed = True
         if scada_failed:
             verification_failed = True
+        if inserted_keys_map:
+            if scada_lines:
+                scada_msg = "SCADA: actualizaciones completadas." if not scada_failed else "SCADA: se detectaron errores."
+                yield from _yield_summary(scada_msg, "error" if scada_failed else "success")
+            else:
+                yield from _yield_summary("SCADA: no se ejecutaron actualizaciones.", "warning")
 
         tags_for_pi = inserted_tags_full.get(empresa, set())
         pi_lines, pi_failed, pi_result = _collect_pi_verification(tags_for_pi)
@@ -1248,6 +1285,9 @@ def crear_tags_pipeline(
             verification_messages.append(line)
         if pi_failed:
             verification_failed = True
+        if tags_for_pi:
+            pi_msg = "PI: consulta completada." if not pi_failed else "PI: consulta con errores."
+            yield from _yield_summary(pi_msg, "error" if pi_failed else "success")
         if pi_result and report_excel_path:
             try:
                 _update_pi_sheet(report_excel_path, pi_result, inserted_tags_full, inserted_pairs_map)
@@ -1294,6 +1334,7 @@ def crear_tags_pipeline(
     if verification_summary:
         extra_payload["verification_summary"] = verification_summary
     extra_payload["verification_failed"] = verification_failed
+    yield from _yield_summary(final_message, "success" if final_status == "SUCCESS" else "error")
     _store_result(final_status, payload["message"], files=files, extra=extra_payload)
     yield _result_line(payload)
 

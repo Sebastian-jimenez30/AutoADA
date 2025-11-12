@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% import "components/console.html" as components %}
 {% import "components/result_panel.html" as result_components %}
+{% import "components/summary_panel.html" as summary_components %}
 
 {% block content %}
 <section class="buscarkey-wrapper">
@@ -114,7 +115,10 @@
 
   <section class="buscarkey-output card">
     <div class="output-tabs" role="tablist">
-      <button type="button" class="output-tab is-active" data-target="console" role="tab" aria-selected="true">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">
+        Resumen
+      </button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">
         Consola
       </button>
       <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">
@@ -122,7 +126,10 @@
       </button>
     </div>
     <div class="output-panels">
-      <div class="output-panel is-active" data-panel="console">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+      <div class="output-panel" data-panel="console">
         {{ components.process_console(
           title="Consola del proceso",
           status_id="logStatus",

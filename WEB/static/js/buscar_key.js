@@ -20,6 +20,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const downloadBtn = document.getElementById("resultDownloadBtn");
   const fileListContainer = document.getElementById("resultFileList");
   const resultDetails = document.getElementById("resultDetails");
+  const summaryPanel = document.getElementById("summaryPanel");
+  const summaryList = document.getElementById("summaryList");
+  const summaryStatus = document.getElementById("summaryStatus");
+  const summaryLoader = document.getElementById("summaryLoader");
+  const summaryEmpty = document.getElementById("summaryEmpty");
 
   const runUrl =
     form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
@@ -71,6 +76,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeSheet = null;
   let resultsNeedsRefresh = true;
   let resultsLoading = false;
+  const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
+  const MAX_SUMMARY_ITEMS = 40;
 
   const activatePanel = (target) => {
     tabs.forEach((tab) => {
@@ -123,6 +130,119 @@ document.addEventListener("DOMContentLoaded", () => {
       resultDetails.classList.remove("is-visible");
     }
   };
+
+  const setSummaryStatus = (label, variant = "info") => {
+    if (!summaryStatus) return;
+    summaryStatus.textContent = label;
+    summaryStatus.dataset.variant = variant;
+  };
+
+  const toggleSummaryLoader = (visible) => {
+    if (!summaryLoader) return;
+    summaryLoader.hidden = !visible;
+  };
+
+  const setSummaryHasMessages = (hasMessages) => {
+    if (summaryPanel) {
+      summaryPanel.classList.toggle("has-messages", hasMessages);
+    }
+    if (summaryEmpty) {
+      summaryEmpty.hidden = hasMessages;
+    }
+  };
+
+  const clearSummaryMessages = () => {
+    if (summaryList) {
+      summaryList.innerHTML = "";
+    }
+    setSummaryHasMessages(false);
+  };
+
+  const appendSummaryMessage = (message, variant = "info") => {
+    if (!summaryPanel || !summaryList) return;
+    const clean = (message || "").trim();
+    if (!clean) return;
+    const normalized = SUMMARY_VARIANTS.has(variant) ? variant : "info";
+
+    const item = document.createElement("li");
+    item.className = "summary-message";
+    item.dataset.variant = normalized;
+
+    const textSpan = document.createElement("span");
+    textSpan.textContent = clean;
+    item.appendChild(textSpan);
+
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "summary-message__time";
+    timeSpan.textContent = new Date().toLocaleTimeString();
+    item.appendChild(timeSpan);
+
+    summaryList.appendChild(item);
+    while (summaryList.children.length > MAX_SUMMARY_ITEMS) {
+      summaryList.removeChild(summaryList.firstChild);
+    }
+    setSummaryHasMessages(true);
+    summaryList.scrollTop = summaryList.scrollHeight;
+  };
+
+  const resetSummaryView = () => {
+    if (!summaryPanel) return;
+    summaryPanel.dataset.state = "idle";
+    clearSummaryMessages();
+    toggleSummaryLoader(false);
+    setSummaryStatus("En espera", "idle");
+    if (summaryEmpty) {
+      summaryEmpty.textContent =
+        "Los mensajes generales aparecerán aquí durante la ejecución.";
+    }
+  };
+
+  const startSummaryRun = () => {
+    if (!summaryPanel) return;
+    resetSummaryView();
+    summaryPanel.dataset.state = "running";
+    toggleSummaryLoader(true);
+    setSummaryStatus("Procesando", "info");
+    appendSummaryMessage("Proceso iniciado.", "info");
+  };
+
+  const finishSummaryRun = (state) => {
+    if (!summaryPanel) return;
+    summaryPanel.dataset.state = "done";
+    toggleSummaryLoader(false);
+    if (state === "success") {
+      setSummaryStatus("Completado", "success");
+      appendSummaryMessage("Proceso completado sin errores.", "success");
+    } else if (state === "error") {
+      setSummaryStatus("Finalizado con errores", "error");
+      appendSummaryMessage("El proceso finalizó con errores.", "error");
+    } else {
+      setSummaryStatus("Finalizado", "info");
+    }
+  };
+
+  const handleSummaryPayload = (payload) => {
+    if (!summaryPanel) return;
+    const content = (payload || "").trim();
+    if (!content) return;
+    const parts = content
+      .split("|")
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (!parts.length) return;
+
+    let variant = "info";
+    const last = parts[parts.length - 1]?.toLowerCase();
+    if (last && SUMMARY_VARIANTS.has(last)) {
+      variant = last;
+      parts.pop();
+    }
+    const message = parts.join(" | ").trim();
+    if (!message) return;
+    appendSummaryMessage(message, variant);
+  };
+
+  resetSummaryView();
 
   const updateSheetTabs = (sheets, active) => {
     if (!sheetTabsContainer) return;
@@ -482,6 +602,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const cleaned = raw.replace(/\r/g, "");
         const trimmed = cleaned.trim();
         if (!trimmed) continue;
+        if (trimmed.startsWith("SUMMARY::")) {
+          handleSummaryPayload(trimmed.substring("SUMMARY::".length));
+          continue;
+        }
         if (trimmed.startsWith("RESULT::")) {
           try {
             finalResult = JSON.parse(trimmed.substring("RESULT::".length));
@@ -510,6 +634,8 @@ document.addEventListener("DOMContentLoaded", () => {
             message: "No fue posible interpretar el resultado final.",
           };
         }
+      } else if (leftover.trim().startsWith("SUMMARY::")) {
+        handleSummaryPayload(leftover.trim().substring("SUMMARY::".length));
       } else {
         appendLog(`${leftover}\n`);
       }
@@ -536,6 +662,7 @@ document.addEventListener("DOMContentLoaded", () => {
       appendLog(`[CLIENT] Error de red: ${error}\n`);
       showResult("ERROR", "No fue posible conectar con el servidor.");
       setStatus("Error", "ERROR");
+      finishSummaryRun("error");
       return;
     }
 
@@ -547,6 +674,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "La ejecución no pudo iniciarse. Verifica los parámetros.",
       );
       setStatus("Error", "ERROR");
+      finishSummaryRun("error");
       return;
     }
 
@@ -559,21 +687,24 @@ document.addEventListener("DOMContentLoaded", () => {
         sheetCache.clear();
         await loadResults({ force: true, autoActivate: true, sheet: null });
       }
+      finishSummaryRun(result.status === "SUCCESS" ? "success" : "error");
     } else {
       showResult(
         "ERROR",
         "El proceso finalizó sin entregar un resultado final.",
       );
       setStatus("Error", "ERROR");
+      finishSummaryRun("error");
     }
   };
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     ejecutarBtn.disabled = true;
-    activatePanel("console");
+    activatePanel("summary");
     resetResultsView();
     setStatus("Ejecutando...");
+    startSummaryRun();
     await ejecutarBusqueda();
     ejecutarBtn.disabled = false;
   });
@@ -585,6 +716,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       setStatus("En espera");
       resetResult();
+      resetSummaryView();
     });
   }
 });
