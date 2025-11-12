@@ -94,13 +94,14 @@
   height: 100%;
   overflow-x: auto;
   overflow-y: auto;
+  padding-bottom: 8px;
 }
 
 .result-table {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
   min-width: 100%;
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .result-table thead {
@@ -117,9 +118,7 @@
   font-size: 14px;
   text-align: left;
   border-bottom: 1px solid rgba(15,23,42,0.08);
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .result-table tbody tr:hover {
