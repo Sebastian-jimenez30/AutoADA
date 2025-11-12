@@ -318,11 +318,15 @@
 }
 
 .summary-loader {
-  display: flex;
+  display: none;
   flex-direction: column;
   align-items: center;
   gap: 12px;
   padding: 8px 0 18px;
+}
+
+.summary-panel[data-state="running"] .summary-loader {
+  display: flex;
 }
 
 .summary-loader__spinner {

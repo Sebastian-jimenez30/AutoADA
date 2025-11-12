@@ -479,6 +479,7 @@ def crear_tags_pipeline(
             extra=extra or {},
         )
 
+
     if not empresa:
         payload = {"status": "ERROR", "message": "Debes seleccionar una empresa válida."}
         _store_result(payload["status"], payload["message"])

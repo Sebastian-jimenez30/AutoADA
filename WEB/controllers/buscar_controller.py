@@ -20,6 +20,7 @@ SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
 OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 RESULT_DIR = os.path.join(OUT_ROOT, "Find_key")
 RESULT_FILE = os.path.join(RESULT_DIR, "Find_Key.xlsx")
+SUMMARY_VARIANTS = {"info", "success", "warning", "error"}
 
 
 def get_empresas() -> Iterable[str]:
@@ -67,8 +68,13 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str]) -> G
         assert process.stdout is not None
         for raw_line in process.stdout:
             line = raw_line.rstrip("\r\n")
-            if line:
-                yield f"[{label}] {line}\n"
+            if not line:
+                continue
+            stripped = line.strip()
+            if stripped.startswith("SUMMARY::"):
+                yield stripped + "\n"
+                continue
+            yield f"[{label}] {line}\n"
     finally:
         try:
             if process.stdout:
@@ -81,6 +87,16 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str]) -> G
     return rc
 
 
+def _summary_line(message: str, variant: str = "info") -> str | None:
+    text = (message or "").strip()
+    if not text:
+        return None
+    normalized = variant.lower()
+    if normalized not in SUMMARY_VARIANTS:
+        normalized = "info"
+    return f"SUMMARY::{text}|{normalized}\n"
+
+
 def buscar_key_pipeline(
     empresa: str,
     dominio: str,
@@ -90,6 +106,14 @@ def buscar_key_pipeline(
     empresa = (empresa or "").strip().upper()
     dominio = (dominio or "").strip().upper()
     yield f"Iniciando búsqueda de keys para empresa={empresa} dominio={dominio}\n"
+    summary_prefix = empresa if empresa else "SIN_EMPRESA"
+
+    def _summary(message: str, variant: str = "info") -> str | None:
+        return _summary_line(message, variant)
+
+    line = _summary(f"{summary_prefix}: proceso de búsqueda iniciado")
+    if line:
+        yield line
 
     if not empresa:
         yield _result_line("ERROR", "Debes seleccionar una empresa válida.")
@@ -103,28 +127,58 @@ def buscar_key_pipeline(
         yield f"Keys inválidas detectadas: {', '.join(keys_invalidas)}\n"
     if not keys_validas:
         yield _result_line("ERROR", "No hay keys válidas para procesar.")
+        line = _summary(f"{summary_prefix}: no hay keys válidas para procesar.", "error")
+        if line:
+            yield line
         return
+    line = _summary(f"{summary_prefix}: {len(keys_validas)} key(s) válidas listas para buscar")
+    if line:
+        yield line
 
     try:
         env = VaultService.build_env()
     except Exception as exc:  # pragma: no cover
         yield f"Error cargando variables del vault: {exc}\n"
         yield _result_line("ERROR", "No se pudo construir el entorno. Verifica que el vault esté desbloqueado.")
+        line = _summary("Error obteniendo credenciales del vault.", "error")
+        if line:
+            yield line
         return
 
     ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
     needs_update = forzar_actualizacion or (not ready)
     yield f"Datos locales disponibles: {ready} (forzar={forzar_actualizacion})\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
+    if needs_update:
+        line = _summary_line(f"{summary_prefix}: se sincronizarán datos locales antes de procesar archivo")
+    else:
+        line = _summary_line(f"{summary_prefix}: datos locales vigentes, se omite sincronización previa")
+    if line:
+        yield line
+    if needs_update:
+        line = _summary(f"{summary_prefix}: se sincronizarán datos locales antes de buscar")
+    else:
+        line = _summary(f"{summary_prefix}: datos locales vigentes, se omite sincronización previa")
+    if line:
+        yield line
 
     usecase = "buscar_keys"
 
     def _abort(message: str):
         yield message + "\n"
         yield _result_line("ERROR", message)
+        line = _summary_line(message, "error")
+        if line:
+            yield line
+        line = _summary(message, "error")
+        if line:
+            yield line
 
     if not needs_update:
         cmd = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
+        line = _summary(f"{summary_prefix}: búsqueda en curso ({len(keys_validas)} key(s))")
+        if line:
+            yield line
         rc = yield from _run_subprocess_stream(cmd, "BUSCAR", env)
         if rc == 0:
             output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
@@ -132,8 +186,20 @@ def buscar_key_pipeline(
                 f"Búsqueda completada exitosamente. "
                 f"Archivo esperado en: {output_file}"
             )
+            matches = _count_result_rows()
+            success_summary = (
+                f"{summary_prefix}: búsqueda completada ({matches} coincidencias)."
+                if matches is not None
+                else f"{summary_prefix}: búsqueda completada."
+            )
+            line = _summary(success_summary, "success")
+            if line:
+                yield line
             yield _result_line("SUCCESS", msg, output_file)
         else:
+            line = _summary(f"{summary_prefix}: búsqueda falló (rc={rc}).", "error")
+            if line:
+                yield line
             yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
         return
 
@@ -161,6 +227,9 @@ def buscar_key_pipeline(
             return
 
     cmd_buscar = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
+    line = _summary(f"{summary_prefix}: búsqueda en curso ({len(keys_validas)} key(s))")
+    if line:
+        yield line
     rc_buscar = yield from _run_subprocess_stream(cmd_buscar, "BUSCAR", env)
     if rc_buscar == 0:
         output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
@@ -168,8 +237,20 @@ def buscar_key_pipeline(
             "Búsqueda completada exitosamente tras la actualización. "
             f"Archivo generado en: {output_file}"
         )
+        matches = _count_result_rows()
+        line = _summary(
+            f"{summary_prefix}: búsqueda completada tras actualización ({matches} coincidencias)."
+            if matches is not None
+            else f"{summary_prefix}: búsqueda completada tras actualización.",
+            "success",
+        )
+        if line:
+            yield line
         yield _result_line("SUCCESS", msg, output_file)
     else:
+        line = _summary(f"{summary_prefix}: búsqueda falló tras actualización (rc={rc_buscar}).", "error")
+        if line:
+            yield line
         yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
 
 
@@ -179,6 +260,30 @@ def _resolve_result_path() -> str | None:
     if os.path.isfile(path):
         return path
     return None
+
+
+def _count_result_rows() -> int | None:
+    """Cuenta filas de resultados (excluyendo encabezado) si el Excel existe."""
+    path = _resolve_result_path()
+    if not path:
+        return None
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=True)
+    except Exception:
+        return None
+    try:
+        sheet_names = workbook.sheetnames
+        if not sheet_names:
+            return 0
+        worksheet = workbook[sheet_names[0]]
+        count = 0
+        for row in worksheet.iter_rows(values_only=True, min_row=2):
+            # considera cualquier fila con datos en al menos una columna
+            if any(cell not in (None, "") for cell in row):
+                count += 1
+        return count
+    finally:
+        workbook.close()
 
 
 def get_result_path() -> str | None:
@@ -291,22 +396,43 @@ def buscar_keys_pipeline(
         f"Iniciando búsqueda de keys desde archivo para empresa={empresa} dominio={dominio} "
         f"archivo={archivo_nombre}\n"
     )
+    summary_prefix = empresa if empresa else "SIN_EMPRESA"
+    file_label = archivo_nombre or os.path.basename(archivo_path)
+
+    def _summary(message: str, variant: str = "info") -> str | None:
+        return _summary_line(message, variant)
+
+    line = _summary(f"{summary_prefix}: proceso de búsqueda desde archivo iniciado ({file_label})")
+    if line:
+        yield line
 
     if not empresa:
         yield _result_line("ERROR", "Debes seleccionar una empresa válida.")
+        line = _summary("Proceso detenido: empresa no proporcionada.", "error")
+        if line:
+            yield line
         return
     if not dominio:
         yield _result_line("ERROR", "Debes seleccionar un dominio válido.")
+        line = _summary("Proceso detenido: dominio no proporcionado.", "error")
+        if line:
+            yield line
         return
 
     if not archivo_path or not os.path.isfile(archivo_path):
         yield _result_line("ERROR", "Archivo de keys no disponible o inaccesible.")
+        line = _summary_line("Archivo de keys no disponible.", "error")
+        if line:
+            yield line
         return
 
     _, extension = os.path.splitext(archivo_path)
     extension = (extension or "").lower()
     if extension not in {".xlsx", ".xlsm", ".xls"}:
         yield _result_line("ERROR", "El archivo debe ser un Excel (.xlsx, .xlsm, .xls).")
+        line = _summary_line("Formato de archivo inválido. Debe ser Excel.", "error")
+        if line:
+            yield line
         return
 
     try:
@@ -314,6 +440,9 @@ def buscar_keys_pipeline(
     except Exception as exc:  # pragma: no cover
         yield f"Error cargando variables del vault: {exc}\n"
         yield _result_line("ERROR", "No se pudo construir el entorno. Verifica que el vault esté desbloqueado.")
+        line = _summary_line("Error obteniendo credenciales del vault.", "error")
+        if line:
+            yield line
         return
 
     ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
@@ -329,6 +458,9 @@ def buscar_keys_pipeline(
 
     if not needs_update:
         cmd = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+        line = _summary_line(f"{summary_prefix}: búsqueda desde archivo en curso ({file_label})")
+        if line:
+            yield line
         rc = yield from _run_subprocess_stream(cmd, "BUSCAR-ARCHIVO", env)
         if rc == 0:
             output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
@@ -336,8 +468,20 @@ def buscar_keys_pipeline(
                 "Búsqueda completada exitosamente desde archivo. "
                 f"Archivo esperado en: {output_file}"
             )
+            matches = _count_result_rows()
+            summary_msg = (
+                f"{summary_prefix}: búsqueda completada desde archivo ({matches} coincidencias)."
+                if matches is not None
+                else f"{summary_prefix}: búsqueda completada desde archivo."
+            )
+            line = _summary_line(summary_msg, "success")
+            if line:
+                yield line
             yield _result_line("SUCCESS", msg, output_file)
         else:
+            line = _summary_line(f"{summary_prefix}: búsqueda desde archivo falló (rc={rc}).", "error")
+            if line:
+                yield line
             yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
         return
 
@@ -347,6 +491,9 @@ def buscar_keys_pipeline(
         return
 
     yield f"Actualizando datos desde el servidor '{servidor}' antes de buscar.\n"
+    line = _summary(f"{summary_prefix}: iniciando actualización desde {servidor}")
+    if line:
+        yield line
 
     steps = [
         ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase)),
@@ -358,13 +505,40 @@ def buscar_keys_pipeline(
         ("CONVERT-ODS_CSV", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "ods_csv")),
     ]
 
+    step_descriptions = {
+        "IMPORT-SCA": "Importación SCADA",
+        "CONVERT-SCA": "Conversión SCADA",
+        "IMPORT-HSH": "Importación HSH",
+        "CONVERT-HSH": "Conversión HSH",
+        "IMPORT-ODS": "Importación ODS",
+        "CONVERT-ODS": "Conversión ODS",
+        "CONVERT-ODS_CSV": "Conversión ODS CSV",
+    }
+
     for label, cmd in steps:
+        friendly = step_descriptions.get(label, label.replace("-", " ").title())
+        line = _summary(f"{summary_prefix}: {friendly} iniciada")
+        if line:
+            yield line
         rc = yield from _run_subprocess_stream(cmd, label, env)
         if rc != 0:
+            line = _summary(f"{summary_prefix}: {friendly} falló (rc={rc}).", "error")
+            if line:
+                yield line
             yield from _abort(f"El paso {label} finalizó con errores (rc={rc}).")
             return
+        line = _summary(f"{summary_prefix}: {friendly} completada", "success")
+        if line:
+            yield line
+
+    line = _summary(f"{summary_prefix}: datos sincronizados correctamente", "success")
+    if line:
+        yield line
 
     cmd_buscar = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+    line = _summary(f"{summary_prefix}: búsqueda desde archivo en curso ({file_label})")
+    if line:
+        yield line
     rc_buscar = yield from _run_subprocess_stream(cmd_buscar, "BUSCAR-ARCHIVO", env)
     if rc_buscar == 0:
         output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
@@ -372,6 +546,18 @@ def buscar_keys_pipeline(
             "Búsqueda completada exitosamente tras la actualización. "
             f"Archivo generado en: {output_file}"
         )
+        matches = _count_result_rows()
+        line = _summary(
+            f"{summary_prefix}: búsqueda completada tras actualización ({matches} coincidencias)."
+            if matches is not None
+            else f"{summary_prefix}: búsqueda completada tras actualización.",
+            "success",
+        )
+        if line:
+            yield line
         yield _result_line("SUCCESS", msg, output_file)
     else:
+        line = _summary(f"{summary_prefix}: búsqueda falló tras actualización (rc={rc_buscar}).", "error")
+        if line:
+            yield line
         yield _result_line("ERROR", "El comando de búsqueda finalizó con errores.")
