@@ -21,6 +21,8 @@ from services.server_resolver import ServerResolver
 from utils.cli import build_cmd
 from utils.data_checks import find_mode_data_ready
 
+SUMMARY_VARIANTS = {"info", "success", "warning", "error"}
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AUX_ROOT = os.path.abspath(os.path.join(BASE_DIR, "..", ".."))
 AUTOADA_DIR = os.path.join(AUX_ROOT, "AutoADA")
@@ -467,9 +469,6 @@ def crear_tags_pipeline(
     dominio = (dominio or "").strip().upper() or "CC"
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
 
-    yield f"Iniciando proceso Crear Tag HSH para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
-    yield from _yield_summary(f"{empresa}: proceso iniciado")
-
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
         global last_crear_result
         last_crear_result = CrearResult(
@@ -478,6 +477,25 @@ def crear_tags_pipeline(
             files=files or [],
             extra=extra or {},
         )
+
+
+    def _summary_line_local(message: str, variant: str = "info") -> str | None:
+        clean = (message or "").strip()
+        if not clean:
+            return None
+        normalized = variant.lower()
+        if normalized not in SUMMARY_VARIANTS:
+            normalized = "info"
+        extra_messages.append(clean)
+        return f"SUMMARY::{clean}|{normalized}\n"
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line_local(message, variant)
+        if line:
+            yield line
+
+    yield f"Iniciando proceso Crear Tag HSH para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
+    yield from _yield_summary(f"{empresa}: proceso iniciado")
 
 
     if not empresa:
@@ -625,21 +643,6 @@ def crear_tags_pipeline(
         while lines and not lines[-1]:
             lines.pop()
         return lines
-
-    def _summary_line(message: str, variant: str = "info") -> str | None:
-        clean = (message or "").strip()
-        if not clean:
-            return None
-        normalized = variant.lower()
-        if normalized not in {"info", "success", "warning", "error"}:
-            normalized = "info"
-        extra_messages.append(clean)
-        return f"SUMMARY::{clean}|{normalized}\n"
-
-    def _yield_summary(message: str, variant: str = "info"):
-        line = _summary_line(message, variant)
-        if line:
-            yield line
 
     def _apply_scada_updates_for_web() -> tuple[list[str], bool]:
         if not inserted_keys_map:
