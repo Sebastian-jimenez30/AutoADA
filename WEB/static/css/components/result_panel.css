@@ -1,54 +1,49 @@
-﻿/* --- Panel contenedor general --- */
+﻿/* --- Panel principal --- */
 .result-panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  overflow: hidden;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* --- Nuevo contenedor interno scrollable --- */
+.result-panel-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 65vh; /* límite total visible */
   overflow: hidden;
-  max-height: 65vh; /* controla el crecimiento total del panel */
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
 }
 
-.result-panel[hidden] {
-  display: none !important;
-}
-
-/* --- Barra superior (toolbar) --- */
+/* Toolbar superior */
 .result-toolbar {
   display: flex;
   align-items: center;
-  gap: 16px;
   justify-content: space-between;
-  flex-wrap: wrap;
+  gap: 16px;
+  padding: 8px 10px;
+  background: #f9fafc;
+  border-bottom: 1px solid rgba(21,35,59,0.08);
+  flex-shrink: 0;
 }
 
-.result-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.result-meta {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-/* --- Pestañas de hojas (Sheet Tabs) --- */
+/* Tabs */
 .result-sheet-tabs {
   display: none;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
 }
-
 .result-sheet-tabs.has-tabs {
   display: inline-flex;
 }
-
 .result-sheet-tab {
   border: none;
   background: rgba(13,30,52,0.08);
@@ -58,164 +53,111 @@
   padding: 6px 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease;
 }
-
-.result-sheet-tab:hover {
-  color: var(--text);
-}
-
 .result-sheet-tab.is-active {
-  background: #0b4f94;
+  background: var(--primary);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(13,30,52,0.22);
 }
 
-/* --- Contenedor de tabla (con scroll controlado) --- */
+/* --- Área de tabla --- */
 .result-table-wrapper {
-  border: 1px solid rgba(21,35,59,0.08);
-  border-radius: var(--radius-md);
-  background: #fff;
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 60vh; /* límite relativo a la ventana */
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
   display: flex;
   flex-direction: column;
-  position: relative;
   overflow: hidden;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
 }
-
-/* Scroll interno para contenido grande */
 .result-table-scroll {
   flex: 1 1 auto;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
   overflow-y: auto;
   overflow-x: auto;
   min-height: 0;
-  max-height: 100%;
+  background: #fff;
 }
-
-/* Estilo del scroll */
 .result-table-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 .result-table-scroll::-webkit-scrollbar-thumb {
-  background-color: rgba(21,35,59,0.2);
+  background-color: rgba(21,35,59,0.25);
   border-radius: 4px;
 }
 .result-table-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(21,35,59,0.35);
+  background-color: rgba(21,35,59,0.45);
 }
 
-/* --- Tabla de resultados --- */
+/* Tabla */
 .result-table {
   border-collapse: collapse;
   width: max-content;
   min-width: 100%;
 }
-
+.result-table th,
+.result-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(15,23,42,0.08);
+  font-size: 14px;
+  text-align: left;
+}
 .result-table thead {
   position: sticky;
   top: 0;
   background: #f1f5f9;
   border-bottom: 1px solid rgba(15,23,42,0.12);
-  z-index: 1;
+  z-index: 2;
 }
-
-.result-table th,
-.result-table td {
-  padding: 10px 14px;
-  font-size: 14px;
-  text-align: left;
-  border-bottom: 1px solid rgba(15,23,42,0.08);
-}
-
 .result-table tbody tr:hover {
-  background: rgba(15,23,42,0.036);
+  background: rgba(15,23,42,0.04);
 }
 
-/* --- Estado vacío --- */
+/* Estado vacío */
 .result-empty {
   display: none;
-  padding: 24px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 14px;
+  flex: 1;
   align-items: center;
   justify-content: center;
-  flex: 1;
+  color: var(--text-muted);
+  font-size: 14px;
+  text-align: center;
+  padding: 24px;
 }
-
 .result-panel.is-empty .result-table,
 .result-panel.is-empty .result-table-scroll {
   display: none;
 }
-
 .result-panel.is-empty .result-empty {
   display: flex;
 }
 
-/* --- Lista de archivos asociados --- */
-.result-file-list {
-  display: none;
-  border: 1px solid rgba(21,35,59,0.08);
-  border-radius: var(--radius-md);
-  padding: 16px 20px;
+/* Archivos / detalles */
+.result-file-list,
+.result-details {
+  flex-shrink: 0;
   background: #f8fafc;
+  border-top: 1px solid rgba(21,35,59,0.08);
+  padding: 12px 20px;
   font-size: 14px;
   line-height: 1.55;
-}
-
-.result-file-list.is-visible {
-  display: block;
-}
-
-.result-file-list ul {
-  margin: 8px 0 0 16px;
-  padding: 0;
-  color: var(--text);
-}
-
-/* --- Panel de detalles (si aplica) --- */
-.result-details {
-  display: none;
-  margin-top: 12px;
-  background: #fff;
-  border: 1px solid rgba(21,35,59,0.08);
-  border-radius: var(--radius-sm);
-  padding: 16px;
-  font-size: 14px;
-  line-height: 1.5;
   overflow-y: auto;
-  max-height: 40vh;
+  max-height: 20vh;
 }
 
-.result-details.is-visible {
-  display: block;
-}
-
-/* --- Panel de resultados dentro de la pestaña --- */
+/* Integración dentro del panel de salida */
 .output-panel[data-panel="results"] {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0; /* evita crecer infinito */
-  overflow: hidden; /* impide scroll global */
+  min-height: 0;
+  overflow: hidden;
 }
 
-/* --- Contenedor general del área de salida --- */
 .buscarkey-output.card {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  max-height: 75vh; /* limita todo el bloque de salida */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 75vh;
   overflow: hidden;
 }
 
@@ -223,19 +165,12 @@
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  min-height: 0; /* evita que herede altura infinita */
+  min-height: 0;
 }
-
 .output-panel.is-active {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-
-/* --- Transiciones suaves al cambiar hojas --- */
-.result-sheet-tab,
-.result-table-wrapper {
-  transition: all 0.2s ease-in-out;
 }
