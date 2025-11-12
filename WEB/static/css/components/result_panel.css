@@ -1,20 +1,20 @@
-﻿/* --- Panel contenedor general --- */
-.result-panel {
+﻿.result-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
-  max-height: 65vh; /* controla el crecimiento total del panel */
 }
 
 .result-panel[hidden] {
   display: none !important;
 }
 
-/* --- Barra superior (toolbar) --- */
+/* --- Toolbar --- */
 .result-toolbar {
   display: flex;
   align-items: center;
@@ -35,7 +35,7 @@
   color: var(--text-muted);
 }
 
-/* --- Pestañas de hojas (Sheet Tabs) --- */
+/* --- Sheet Tabs --- */
 .result-sheet-tabs {
   display: none;
   align-items: center;
@@ -69,14 +69,13 @@
   box-shadow: 0 6px 18px rgba(13,30,52,0.22);
 }
 
-/* --- Contenedor de tabla (con scroll controlado) --- */
+/* --- Table Container --- */
 .result-table-wrapper {
   border: 1px solid rgba(21,35,59,0.08);
   border-radius: var(--radius-md);
   background: #fff;
-  max-height: 60vh; /* límite relativo a la ventana */
-  min-height: 280px;
   flex: 1 1 auto;
+  min-height: 0;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
   display: flex;
   flex-direction: column;
@@ -87,31 +86,16 @@
   min-width: 0;
 }
 
-/* Scroll interno para contenido grande */
 .result-table-scroll {
   flex: 1 1 auto;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-y: auto;
+  height: 100%;
   overflow-x: auto;
-  max-height: inherit;
+  overflow-y: auto;
 }
 
-/* Estilo del scroll */
-.result-table-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.result-table-scroll::-webkit-scrollbar-thumb {
-  background-color: rgba(21,35,59,0.2);
-  border-radius: 4px;
-}
-.result-table-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(21,35,59,0.35);
-}
-
-/* --- Tabla de resultados --- */
 .result-table {
   border-collapse: collapse;
   width: max-content;
@@ -138,7 +122,6 @@
   background: rgba(15,23,42,0.036);
 }
 
-/* --- Estado vacío --- */
 .result-empty {
   display: none;
   padding: 24px;
@@ -159,7 +142,6 @@
   display: flex;
 }
 
-/* --- Lista de archivos asociados --- */
 .result-file-list {
   display: none;
   border: 1px solid rgba(21,35,59,0.08);
@@ -168,6 +150,10 @@
   background: #f8fafc;
   font-size: 14px;
   line-height: 1.55;
+  flex: 0 0 auto;
+  max-height: 120px;
+  overflow-y: auto;
+  margin-top: 12px;
 }
 
 .result-file-list.is-visible {
@@ -180,18 +166,32 @@
   color: var(--text);
 }
 
-/* --- Panel de detalles (si aplica) --- */
+.result-file-list li + li {
+  margin-top: 4px;
+}
+
+.result-file-list a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.result-file-list a:hover {
+  text-decoration: underline;
+}
+
 .result-details {
   display: none;
-  margin-top: 12px;
-  background: #fff;
-  border: 1px solid rgba(21,35,59,0.08);
+  border-left: 3px solid var(--primary);
+  padding: 12px 16px;
+  background: rgba(11,79,148,0.06);
   border-radius: var(--radius-sm);
-  padding: 16px;
+  color: var(--text);
   font-size: 14px;
   line-height: 1.5;
   overflow-y: auto;
-  max-height: 40vh;
+  max-height: 140px;
+  flex: 0 0 auto;
+  margin-top: 12px;
 }
 
 .result-details.is-visible {
@@ -200,12 +200,15 @@
 
 /* --- Contenedor dentro del tab de resultados --- */
 .output-panel[data-panel="results"] {
-  height: auto;
+  min-height: 380px;
 }
 
 .output-panel[data-panel="results"].is-active {
   display: flex !important;
   flex-direction: column;
+  height: 520px;
+  max-height: 520px;
+  overflow: hidden;
 }
 
 /* --- Transiciones suaves al cambiar hojas --- */
