@@ -11,25 +11,9 @@
     details_id="resultDetails"
 ) -%}
 <div id="{{ wrapper_id }}" class="result-panel" hidden>
-  <button
-    type="button"
-    class="result-close-btn"
-    data-expand-target="{{ wrapper_id }}"
-    aria-label="Cerrar vista expandida"
-  >
-    ×
-  </button>
   <div class="result-toolbar">
     <div class="result-sheet-tabs" id="{{ sheet_tabs_id }}" role="tablist"></div>
     <div class="result-toolbar-actions">
-      <button
-        type="button"
-        class="btn btn-secondary result-expand-toggle"
-        data-expand-target="{{ wrapper_id }}"
-        aria-expanded="false"
-      >
-        Expandir
-      </button>
       <button type="button" class="btn btn-secondary" id="{{ download_id }}" disabled>
         Descargar Excel
       </button>
