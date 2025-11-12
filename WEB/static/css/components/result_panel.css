@@ -200,9 +200,12 @@
 
 /* --- Contenedor dentro del tab de resultados --- */
 .output-panel[data-panel="results"] {
-  display: flex;
+  height: auto;
+}
+
+.output-panel[data-panel="results"].is-active {
+  display: flex !important;
   flex-direction: column;
-  height: 100%;
 }
 
 /* --- Transiciones suaves al cambiar hojas --- */
