@@ -478,6 +478,8 @@ def crear_tags_pipeline(
             extra=extra or {},
         )
 
+    extra_messages: list[str] = []
+
 
     def _summary_line_local(message: str, variant: str = "info") -> str | None:
         clean = (message or "").strip()
@@ -542,7 +544,6 @@ def crear_tags_pipeline(
     report_paths: set[str] = set()
     info_paths: set[str] = set()
     extra_paths: set[str] = set()
-    extra_messages: list[str] = []
     report_excel_path: Optional[str] = None
     inserted_keys_full: dict[str, set[str]] = {}
     inserted_keys_map: dict[str, dict[str, set[str]]] = {}
