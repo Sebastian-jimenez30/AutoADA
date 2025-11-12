@@ -6,6 +6,9 @@
   <title>{{ page_title if page_title else "AutoADA Web" }}</title>
   <link rel="icon" href="{{ url_for('static', path='img/LogoDOT.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/components/console.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/components/summary_panel.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/components/result_panel.css') }}">
 </head>
 <body data-active-section="{{ active_section if active_section else '' }}">
   <div class="app-shell">
