@@ -10,8 +10,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const tabs = Array.from(document.querySelectorAll(".output-tab"));
   const panels = Array.from(document.querySelectorAll(".output-panel"));
-  const expandButtons = Array.from(document.querySelectorAll(".result-expand-toggle"));
-  const closeButtons = Array.from(document.querySelectorAll(".result-close-btn"));
 
   const resultPanel = document.getElementById("resultPanel");
   const resultHead = document.getElementById("resultTableHead");
@@ -80,74 +78,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let resultsLoading = false;
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
-  let expandedPanel = null;
-  let resultOverlay = null;
-
-  if ((expandButtons.length || closeButtons.length) && !resultOverlay) {
-    resultOverlay = document.querySelector(".result-modal-overlay");
-    if (!resultOverlay) {
-      resultOverlay = document.createElement("div");
-      resultOverlay.className = "result-modal-overlay";
-      document.body.appendChild(resultOverlay);
-    }
-  }
-
-  const updateExpandButtons = (panelId, expanded) => {
-    document.querySelectorAll(`[data-expand-target="${panelId}"]`).forEach((btn) => {
-      btn.setAttribute("aria-expanded", expanded ? "true" : "false");
-      if (btn.classList.contains("result-expand-toggle")) {
-        btn.disabled = expanded;
-      }
-    });
-  };
-
-  const collapseResultFullscreen = () => {
-    if (!expandedPanel) return;
-    const panelId = expandedPanel.id;
-    expandedPanel.classList.remove("is-expanded");
-    expandedPanel = null;
-    document.body.classList.remove("result-modal-open");
-    if (resultOverlay) {
-      resultOverlay.classList.remove("is-visible");
-    }
-    updateExpandButtons(panelId, false);
-  };
-
-  const openResultFullscreen = (panelId) => {
-    if (!panelId) return;
-    const panel = document.getElementById(panelId);
-    if (!panel || expandedPanel === panel) return;
-    expandedPanel = panel;
-    panel.classList.add("is-expanded");
-    document.body.classList.add("result-modal-open");
-    if (resultOverlay) {
-      resultOverlay.classList.add("is-visible");
-    }
-    updateExpandButtons(panelId, true);
-    panel.focus?.();
-  };
-
-  if (resultOverlay) {
-    resultOverlay.addEventListener("click", collapseResultFullscreen);
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        collapseResultFullscreen();
-      }
-    });
-  }
-
-  expandButtons.forEach((btn) => {
-    btn.addEventListener("click", () => openResultFullscreen(btn.dataset.expandTarget));
-  });
-
-  closeButtons.forEach((btn) => {
-    btn.addEventListener("click", () => collapseResultFullscreen());
-  });
 
   const activatePanel = (target) => {
-    if (target !== "results") {
-      collapseResultFullscreen();
-    }
     tabs.forEach((tab) => {
       const isActive = tab.dataset.target === target;
       tab.classList.toggle("is-active", isActive);
@@ -165,7 +97,6 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const resetResultsView = () => {
-    collapseResultFullscreen();
     resultsNeedsRefresh = true;
     activeSheet = null;
     availableSheets = [];

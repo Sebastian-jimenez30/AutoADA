@@ -1,5 +1,4 @@
 ﻿.result-panel {
-  position: relative;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -157,7 +156,7 @@
   font-size: 14px;
   line-height: 1.55;
   flex: 0 0 auto;
-  max-height: 140px;
+  max-height: 220px;
   overflow-y: auto;
   margin-top: 12px;
 }
@@ -189,55 +188,6 @@
   display: none !important;
 }
 
-.result-close-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(15,23,42,0.85);
-  color: #fff;
-  font-size: 20px;
-  font-weight: 600;
-  display: none;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 3;
-}
-
-.result-panel.is-expanded .result-close-btn {
-  display: flex;
-}
-
-.result-panel.is-expanded {
-  position: fixed;
-  inset: 32px;
-  width: calc(100vw - 64px);
-  height: calc(100vh - 64px);
-  max-width: none;
-  max-height: none;
-  z-index: 1600;
-  background: #fff;
-  border-radius: 18px;
-  box-shadow: 0 30px 80px rgba(15,23,42,0.35);
-  padding: 32px;
-  gap: 18px;
-}
-
-.result-panel.is-expanded .result-table-wrapper {
-  flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
-  max-height: none;
-}
-
-.result-panel.is-expanded .result-file-list {
-  max-height: 240px;
-}
-
 /* --- Contenedor dentro del tab de resultados --- */
 .output-panel[data-panel="results"] {
   min-height: 380px;
@@ -251,13 +201,6 @@
   overflow: hidden;
   width: 100%;
   max-width: 100%;
-}
-
-.output-panel[data-panel="results"].is-active .result-panel.is-expanded {
-  height: 100%;
-  max-height: none;
-  width: calc(100vw - 64px);
-  max-width: none;
 }
 
 /* --- Transiciones suaves al cambiar hojas --- */
