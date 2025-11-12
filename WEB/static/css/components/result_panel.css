@@ -1,29 +1,22 @@
-﻿/* --- Panel principal --- */
+﻿/* --- Panel principal de resultados --- */
+.output-panel[data-panel="results"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 65vh; /* controla el tamaño visible */
+  overflow: hidden; /* evita expandir el body */
+}
+
 .result-panel {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
   flex: 1 1 auto;
   min-height: 0;
-}
-
-/* --- Nuevo contenedor interno scrollable --- */
-.result-panel-inner {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 65vh; /* límite total visible */
   overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
 }
 
-/* Toolbar superior */
+/* --- Toolbar superior --- */
 .result-toolbar {
   display: flex;
   align-items: center;
@@ -35,7 +28,7 @@
   flex-shrink: 0;
 }
 
-/* Tabs */
+/* --- Tabs de hojas --- */
 .result-sheet-tabs {
   display: none;
   align-items: center;
@@ -60,21 +53,28 @@
   color: #fff;
 }
 
-/* --- Área de tabla --- */
+/* --- Contenedor principal de la tabla --- */
 .result-table-wrapper {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #fff;
+  border: 1px solid rgba(21,35,59,0.08);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
 }
+
+/* --- Scroll interno solo aquí --- */
 .result-table-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: auto;
   min-height: 0;
-  background: #fff;
+  max-height: 100%;
 }
+
 .result-table-scroll::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -87,7 +87,7 @@
   background-color: rgba(21,35,59,0.45);
 }
 
-/* Tabla */
+/* --- Tabla de resultados --- */
 .result-table {
   border-collapse: collapse;
   width: max-content;
@@ -111,7 +111,7 @@
   background: rgba(15,23,42,0.04);
 }
 
-/* Estado vacío */
+/* --- Estado vacío --- */
 .result-empty {
   display: none;
   flex: 1;
@@ -130,7 +130,7 @@
   display: flex;
 }
 
-/* Archivos / detalles */
+/* --- Lista de archivos y detalles --- */
 .result-file-list,
 .result-details {
   flex-shrink: 0;
@@ -141,36 +141,4 @@
   line-height: 1.55;
   overflow-y: auto;
   max-height: 20vh;
-}
-
-/* Integración dentro del panel de salida */
-.output-panel[data-panel="results"] {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.buscarkey-output.card {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-height: 0;
-  max-height: 75vh;
-  overflow: hidden;
-}
-
-.output-panels {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.output-panel.is-active {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
