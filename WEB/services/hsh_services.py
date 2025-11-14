@@ -141,9 +141,10 @@ def apply_scada_updates(
                 suffix_set = {s.upper() for s in suffixes if s}
                 bit_specs: set[tuple[int, int]] = set()
                 if suffix_set & analog_suffixes:
-                  bit_specs.add((5, 1))
                   if "ESTIMATED" in suffix_set:
                     bit_specs.add((5, 2))
+                  else:
+                    bit_specs.add((5, 1))
                 else:
                   bit_specs.add((4, 1))
                 if not bit_specs:
