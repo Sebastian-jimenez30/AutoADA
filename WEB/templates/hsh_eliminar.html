@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
+{% import "components/summary_panel.html" as summary_components %}
+
+{% block content %}
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+    <div class="buscarkey-header__title">
+      <h2>Eliminar Tag HSH</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
+    </div>
+  </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Eliminar Tag HSH</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+
+      <div class="info-modal__body">
+        <p>
+          Este proceso analiza un archivo Excel con claves SCADA y, si lo indicas,
+          elimina los tags en HSH y apaga los bits SCADA asociados para empresa principal y respaldo.
+        </p>
+
+        <h4>Requisitos</h4>
+        <ul>
+          <li>Archivo <code>.xlsx/.xlsm/.xls</code> con la hoja <strong>Eliminar Tag</strong> y columna <code>SCADA_KEY</code>.</li>
+          <li>Seleccionar empresa y dominio (por defecto <strong>CC</strong>).</li>
+          <li>Opcional: marcar <strong>Eliminar en HSH (modo apply)</strong> para ejecutar la eliminación real.</li>
+        </ul>
+
+        <h4>Salidas</h4>
+        <ul>
+          <li>Archivos Delete/Purge generados por AutoADA.</li>
+          <li>Resumen de claves eliminadas y pendientes en lookup_table.</li>
+          <li>Mensajes de apagado de bits SCADA cuando aplica.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="buscarkey-form card">
+    <h3>Parámetros de ejecución</h3>
+    <form
+      id="buscarKeyForm"
+      method="post"
+      action="/hsh/eliminar/run"
+      enctype="multipart/form-data"
+      data-run-url="/hsh/eliminar/run"
+      data-result-url="/hsh/eliminar/result"
+      data-file-download="/hsh/eliminar/result/download"
+    >
+      <div class="form-layout">
+        <div class="form-left">
+          <div class="form-row-top">
+            <div class="form-field">
+              <label for="empresa">Empresa</label>
+              <select id="empresa" name="empresa" required>
+                <option value="" disabled selected>Selecciona la empresa</option>
+                {% for empresa in empresas %}
+                  <option value="{{ empresa }}">{{ empresa }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="dominio">Dominio</label>
+              <select id="dominio" name="dominio" required>
+                <option value="CC" selected>CC</option>
+                {% for dominio in dominios %}
+                  <option value="{{ dominio }}">{{ dominio }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <div class="form-field form-field--full">
+            <label for="archivo">Archivo Excel con claves SCADA a eliminar</label>
+            <input
+              type="file"
+              id="archivo"
+              name="archivo"
+              accept=".xlsx,.xlsm,.xls"
+              required
+            >
+          </div>
+
+          <div class="form-field checkbox-field">
+            <label>
+              <input type="checkbox" id="aplicar" name="aplicar" value="1">
+              Eliminar en HSH (modo apply)
+            </label>
+          </div>
+
+          <p class="form-help-text">
+            <strong>Nota:</strong> en modo apply se ejecutan eliminaciones en HSH y acciones SCADA remotas.
+            Revisa los resultados antes de repetir la operación.
+          </p>
+        </div>
+
+        <div class="form-right">
+          <button type="submit" class="btn btn-primary" id="buscarKeyBtn">
+            Ejecutar
+          </button>
+          <button type="button" class="btn btn-secondary" id="limpiarLogBtn">
+            Limpiar consola
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">
+        Resumen
+      </button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">
+        Consola
+      </button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">
+        Resultados
+      </button>
+    </div>
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+      <div class="output-panel" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta",
+          file_list_id="resultFileList",
+          details_id="resultDetails"
+        ) }}
+      </div>
+    </div>
+  </section>
+</section>
+
+<script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn.addEventListener("click", () => {
+    infoModal.classList.add("is-visible");
+  });
+
+  closeInfoBtn.addEventListener("click", () => {
+    infoModal.classList.remove("is-visible");
+  });
+
+  infoModal.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
+
+{% endblock %}
+

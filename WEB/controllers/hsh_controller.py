@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Set
 from urllib.parse import quote
 
 from openpyxl import load_workbook
+import pandas as pd
 
 from services.hsh_services import (
     PiSnapshotResult,
@@ -34,6 +35,7 @@ OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 HSH_OUTPUT_DIR = os.path.join(OUT_ROOT, "HSH")
 CREAR_TAG_DIR = os.path.join(OUT_ROOT, "crear_tag")
 CREAR_TAG_REPORT = os.path.join(CREAR_TAG_DIR, "reporte_crear_tag.xlsx")
+ELIMINAR_TAG_DIR = os.path.join(OUT_ROOT, "eliminar_tag")
 SCRIPTS_DIR = os.path.join(AUTOADA_DIR, "scripts")
 
 if AUTOADA_DIR not in sys.path:
@@ -70,6 +72,17 @@ class CrearResult:
 
 
 last_crear_result: Optional[CrearResult] = None
+
+
+@dataclass
+class EliminarResult:
+    status: str
+    message: str
+    files: list[str] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+last_eliminar_result: Optional[EliminarResult] = None
 
 
 def get_empresas() -> Iterable[str]:
@@ -491,7 +504,6 @@ def crear_tags_pipeline(
         if not tags_set:
             return [], False, None
 
-        dummy_app = _DummyApp(env, AUTOADA_DIR)
         lines: list[str] = []
 
         def _console_write(msg: str, tag: str = "info") -> None:
@@ -506,7 +518,8 @@ def crear_tags_pipeline(
         }
 
         result_pi = collect_pi_snapshots(
-            app=dummy_app,
+            env_map=env,
+            base_dir=AUTOADA_DIR,
             tags_by_empresa={emp_upper: tags_set},
             server_map=server_map,
             console_write=_console_write,
@@ -784,6 +797,7 @@ def crear_tags_pipeline(
             inserted_keys_map=inserted_keys_map,
             env=env,
             autoada_dir=AUTOADA_DIR,
+            enable=True,
             record_status=_record_status,
         )
         if scada_lines:
@@ -960,10 +974,473 @@ def load_crear_result_preview(sheet: str | None = None, limit: int = 500) -> dic
         workbook.close()
 
 
-class _DummyApp:
-    def __init__(self, env_map: dict[str, str], base_dir: str) -> None:
-        self._env_map = env_map
-        self.base_dir = base_dir
+def get_last_eliminar_result() -> EliminarResult | None:
+    return last_eliminar_result
 
-    def secure_env(self) -> dict[str, str]:
-        return self._env_map
+
+def eliminar_tags_pipeline(
+    empresa: str,
+    dominio: str,
+    archivo_path: str,
+    archivo_nombre: str | None,
+    aplicar: bool,
+) -> Generator[str, None, None]:
+    global last_eliminar_result
+
+    empresa = (empresa or "").strip().upper()
+    dominio = (dominio or "").strip().upper() or "CC"
+    archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
+
+    def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_eliminar_result
+        last_eliminar_result = EliminarResult(
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    extra_messages: list[str] = []
+
+    def _summary_line_local(message: str, variant: str = "info") -> str | None:
+        clean = (message or "").strip()
+        if not clean:
+            return None
+        normalized = variant.lower()
+        if normalized not in SUMMARY_VARIANTS:
+            normalized = "info"
+        extra_messages.append(clean)
+        return f"SUMMARY::{clean}|{normalized}\n"
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line_local(message, variant)
+        if line:
+            yield line
+
+    yield f"Iniciando proceso Eliminar Tag HSH para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
+    yield from _yield_summary(f"{empresa}: proceso iniciado")
+
+    if not empresa:
+        payload = {"status": "ERROR", "message": "Debes seleccionar una empresa válida."}
+        _store_result(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    if not archivo_path or not os.path.isfile(archivo_path):
+        payload = {"status": "ERROR", "message": "No se pudo acceder al archivo de entrada."}
+        _store_result(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield f"Error obteniendo variables del vault: {exc}\n"
+        message = "No se pudo construir el entorno. Verifica que el vault esté desbloqueado."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    respaldo = RESPALDO_MAP.get(empresa)
+    servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
+    servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
+
+    if not servidor_principal or (aplicar and respaldo and not servidor_respaldo):
+        message = "No se pudieron resolver servidores principal o respaldo."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    run_targets: list[tuple[str, Optional[str], Optional[str]]] = [(empresa, respaldo, servidor_principal)]
+    if respaldo and servidor_respaldo:
+        run_targets.append((respaldo, empresa, servidor_respaldo))
+
+    # Mapa base_key -> tag (a partir del Excel de entrada)
+    input_keys: dict[str, str] = {}
+    try:
+        df = pd.read_excel(archivo_path, sheet_name="Eliminar Tag", dtype=str)
+    except Exception:
+        df = None
+    if df is not None and not df.empty:
+        cols_map = {str(col).strip().upper(): col for col in df.columns}
+        key_col = None
+        for candidate in ("SCADA_KEY", "SCADAKEY", "SCADA KEY"):
+            if candidate in cols_map:
+                key_col = cols_map[candidate]
+                break
+        tag_col = None
+        for candidate in ("TAG", "NOMBRE TAG"):
+            if candidate in cols_map:
+                tag_col = cols_map[candidate]
+                break
+        if key_col is not None:
+            for _, row in df.iterrows():
+                raw_key = str(row.get(key_col) or "").strip()
+                if not raw_key:
+                    continue
+                base = raw_key.split(".", 1)[0].strip()
+                if not base:
+                    continue
+                tag_val = ""
+                if tag_col is not None:
+                    tag_val = str(row.get(tag_col) or "").strip()
+                # Si ya existe, conservamos el primer tag no vacío
+                if base in input_keys and not tag_val:
+                    continue
+                input_keys[base] = tag_val
+
+    report_paths: list[str] = []
+    delete_files: list[str] = []
+    purge_files: list[str] = []
+    lookup_deleted: dict[str, int] = {}
+    lookup_remaining: dict[str, int] = {}
+    lookup_would_delete: dict[str, list[str]] = {}
+    lookup_removed: dict[str, list[str]] = {}
+    lookup_still: dict[str, list[str]] = {}
+    lookup_statuses: dict[str, dict[str, str]] = {}
+    group_matches: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    delete_keys_by_emp: dict[str, set[str]] = {}
+
+    def _handle_marker(line: str):
+        line = (line or "").strip()
+        if not line:
+            return
+
+        lower = line.lower()
+        tag = "info"
+        if "error" in lower or "fallo" in lower or "failed" in lower or "traceback" in lower:
+            tag = "error"
+        elif any(tok in lower for tok in ("warn", "warning")):
+            tag = "warn"
+
+        if line.startswith("REPORT_PATH:"):
+            report_paths.append(line.split(":", 1)[1].strip())
+        elif line.startswith("DELETE_FILE:"):
+            delete_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("PURGE_FILE:"):
+            purge_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("LOOKUP_STATUS:"):
+            try:
+                _, payload = line.split("LOOKUP_STATUS:", 1)
+                emp, base, status = payload.split(":", 2)
+                emp_u = emp.strip().upper()
+                lookup_statuses.setdefault(emp_u, {})[base.strip()] = status.strip().upper()
+            except Exception:
+                pass
+        elif line.startswith("GROUP_MATCH:"):
+            try:
+                _, payload = line.split("GROUP_MATCH:", 1)
+                emp, base, raw = payload.split(":", 2)
+                emp_u = emp.strip().upper()
+                try:
+                    details = json.loads(raw) if raw else []
+                except json.JSONDecodeError:
+                    details = []
+                if isinstance(details, list):
+                    group_matches.setdefault(emp_u, {})[base.strip()] = details
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_DELETE:"):
+            try:
+                _, payload = line.split("LOOKUP_DELETE:", 1)
+                emp, val = payload.split(":", 1)
+                lookup_deleted[emp.strip().upper()] = int(val.strip() or 0)
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_REMAINING:"):
+            try:
+                _, payload = line.split("LOOKUP_REMAINING:", 1)
+                emp, val = payload.split(":", 1)
+                lookup_remaining[emp.strip().upper()] = int(val.strip() or 0)
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_WOULD_DELETE:"):
+            try:
+                _, payload = line.split("LOOKUP_WOULD_DELETE:", 1)
+                emp, keys_part = payload.split(":", 1)
+                emp_u = emp.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                lookup_would_delete[emp_u] = keys
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_REMOVED:"):
+            try:
+                _, payload = line.split("LOOKUP_REMOVED:", 1)
+                emp, keys_part = payload.split(":", 1)
+                emp_u = emp.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                lookup_removed[emp_u] = keys
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_STILL:"):
+            try:
+                _, payload = line.split("LOOKUP_STILL:", 1)
+                emp, keys_part = payload.split(":", 1)
+                emp_u = emp.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                lookup_still[emp_u] = keys
+            except Exception:
+                pass
+        elif line.startswith("DELETE_KEYS:"):
+            try:
+                _, payload = line.split("DELETE_KEYS:", 1)
+                emp, keys_part = payload.split(":", 1)
+                emp_u = emp.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                delete_keys_by_emp.setdefault(emp_u, set()).update(keys)
+            except Exception:
+                pass
+
+        # SUMMARY: lines vienen del script y ya se canalizan a extra_messages vía _emit_summary,
+        # pero aquí no los repetimos en consola, solo los registramos si queremos.
+
+    def _stream_script(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                raw = chunk
+                if "[" in raw and "]" in raw:
+                    raw = raw.split("]", 1)[1]
+                _handle_marker(raw.strip())
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    def _infer_bits_from_tag(tag: str) -> tuple[bool, bool]:
+        """Devuelve (bit1, bit2) en función del sufijo del tag (VALUE / ESTIMATED / digital)."""
+        raw = (tag or "").strip()
+        if not raw:
+            # Sin información: tratamos como digital (solo bit1)
+            return True, False
+        suffix = ""
+        if "." in raw:
+            suffix = raw.rsplit(".", 1)[1].strip().upper()
+        analog_suffixes = {"VALUE", "ESTIMATED"}
+        if suffix in analog_suffixes:
+            if suffix == "ESTIMATED":
+                # Solo bit 2 para estimated (coherente con SCADA)
+                return False, True
+            # Analógico normal: bit 1
+            return True, False
+        # Digital / desconocido: bit 1
+        return True, False
+
+    def _generate_verification_excel() -> str | None:
+        """Genera un Excel de verificación en modo validar (sin aplicar cambios)."""
+        if not input_keys:
+            return None
+
+        principal = empresa
+        statuses = lookup_statuses.get(principal, {})
+        groups_map = group_matches.get(principal, {})
+        would_delete = lookup_would_delete.get(principal, [])
+        would_bases = {k.split(".", 1)[0].strip() for k in would_delete if k}
+
+        rows: list[dict[str, str]] = []
+        for base_key, tag_val in sorted(input_keys.items()):
+            status_txt = (statuses.get(base_key, "ABSENT") or "").upper()
+            in_lookup = status_txt == "PRESENT" or base_key in would_bases
+            in_groups = bool(groups_map.get(base_key))
+            bit1, bit2 = _infer_bits_from_tag(tag_val)
+            apta = "sí" if in_lookup or in_groups else "no"
+
+            rows.append(
+                {
+                    "key": base_key,
+                    "tag": tag_val or "",
+                    "bit 1": "off" if bit1 else "",
+                    "bit 2": "off" if bit2 else "",
+                    "lookuptable": "existe" if in_lookup else "no existe",
+                    "groups": "existe" if in_groups else "no existe",
+                    "apta": apta,
+                }
+            )
+
+        if not rows:
+            return None
+
+        try:
+            out_dir = Path(ELIMINAR_TAG_DIR)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = out_dir / f"reporte_eliminar_{timestamp}.xlsx"
+            df = pd.DataFrame(rows, columns=["key", "tag", "bit 1", "bit 2", "lookuptable", "groups", "apta"])
+            df.to_excel(report_path, index=False, sheet_name="verificacion")
+            return str(report_path)
+        except Exception as exc:
+            extra_messages.append(f"[VERIFICAR] No se pudo generar el Excel de verificación: {exc}")
+            return None
+
+    # Siempre sincronizamos dumps SCADA/HSH antes de eliminar cuando aplicar=True
+    if aplicar:
+        yield from _yield_summary("Sincronizando dumps SCADA/HSH para eliminación")
+        pre_commands: list[tuple[str, list[str]] | None] = [
+            (
+                "IMPORT-PRINCIPAL",
+                build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+            ),
+            (
+                "IMPORT-RESPALDO",
+                build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+            )
+            if respaldo and servidor_respaldo
+            else None,
+            ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+            ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+            (
+                "CONVERT-SCA-RESPALDO",
+                build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+            )
+            if respaldo
+            else None,
+            (
+                "CONVERT-HSH-RESPALDO",
+                build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+            )
+            if respaldo
+            else None,
+        ]
+
+        for entry in pre_commands:
+            if not entry:
+                continue
+            label, cmd = entry
+            rc_pre = yield from _stream_script(label, cmd)
+            if rc_pre != 0:
+                target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
+                message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+                yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
+                _store_result("ERROR", message)
+                yield _result_line({"status": "ERROR", "message": message})
+                return
+        yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
+
+    # Ejecución principal del script de eliminación para principal y respaldo
+    for target_empresa, target_respaldo, target_server in run_targets:
+        if not target_empresa or not target_server:
+            continue
+        accion = "Eliminando" if aplicar else "Analizando"
+        yield f"{accion} para empresa {target_empresa} (servidor {target_server})...\n"
+        yield from _yield_summary(f"{target_empresa}: {accion.lower()} en curso")
+
+        cmd = build_cmd("scripts.hsh_eliminar_tag", target_empresa, "--input", archivo_path)
+        if target_respaldo:
+            cmd += ["--respaldo", target_respaldo]
+        if aplicar:
+            cmd += ["--apply", "--server", target_server]
+            # Si tenemos server de respaldo, se lo indicamos al script para Mongo
+            respaldo_server = servidor_respaldo if target_empresa == empresa else servidor_principal
+            if respaldo_server and target_respaldo:
+                cmd += ["--server-respaldo", respaldo_server]
+
+        rc = yield from _stream_script(f"ELIMINAR-{target_empresa}", cmd)
+        if rc != 0:
+            message = f"El script hsh_eliminar_tag para {target_empresa} finalizó con errores (rc={rc})."
+            files = sorted({*report_paths, *delete_files, *purge_files})
+            yield from _yield_summary(f"{target_empresa}: {accion.lower()} falló", "error")
+            _store_result("ERROR", message, files=files)
+            yield _result_line({"status": "ERROR", "message": message, "files": files})
+            return
+        yield from _yield_summary(f"{target_empresa}: {accion.lower()} completado", "success")
+
+    # Apagar bits en SCADA solo si se aplicó la eliminación y se recibieron claves
+    scada_messages: list[str] = []
+    scada_failed = False
+    if aplicar and delete_keys_by_emp:
+        inserted_keys_map: dict[str, dict[str, set[str]]] = {}
+        for emp_u, keys in delete_keys_by_emp.items():
+            base_map: dict[str, set[str]] = {}
+            for key in keys:
+                clean = (key or "").strip()
+                if not clean:
+                    continue
+                base, dot, suf = clean.partition(".")
+                base_u = base.strip().upper()
+                if not base_u:
+                    continue
+                suffixes = base_map.setdefault(base_u, set())
+                if dot and suf:
+                    suffixes.add(suf.strip().upper())
+            if base_map:
+                inserted_keys_map[emp_u] = base_map
+
+        if inserted_keys_map:
+            scada_messages, scada_failed = apply_scada_updates(
+                inserted_keys_map=inserted_keys_map,
+                env=env,
+                autoada_dir=AUTOADA_DIR,
+                enable=False,
+                log_filename="eliminar_scada_off.log",
+                record_status=None,
+            )
+            for msg in scada_messages:
+                extra_messages.append(msg)
+            yield from _yield_summary(
+                "SCADA: apagado de bits completado" if not scada_failed else "SCADA: apagado de bits con incidencias",
+                "error" if scada_failed else "success",
+            )
+
+    # Preparar archivos y mensaje final
+    resumen: list[str] = []
+    verification_report_path: str | None = None
+    if not aplicar:
+        for emp in sorted({empresa, *(respaldo or "").split()}):
+            if not emp:
+                continue
+            resumen.append(f"{emp}:")
+            statuses_emp = lookup_statuses.get(emp, {})
+            bases = sorted(set(statuses_emp.keys()) | set(group_matches.get(emp, {}).keys()))
+            if bases:
+                for base in bases:
+                    status_txt = statuses_emp.get(base, "ABSENT").lower()
+                    resumen.append(f"  {base}: lookup={status_txt}")
+            else:
+                resumen.append("  Sin datos de lookup_table ni groups.")
+            keys_preview = lookup_would_delete.get(emp, [])
+            if keys_preview:
+                listado = ", ".join(keys_preview)
+                resumen.append(f"  Se eliminarían {len(keys_preview)} claves de lookup_table: {listado}")
+        # Generar Excel de verificación con el detalle por key/tag
+        verification_report_path = _generate_verification_excel()
+        if verification_report_path:
+            resumen.append(f"Reporte de verificación generado en {verification_report_path}")
+            report_paths.append(verification_report_path)
+    else:
+        for emp in sorted({empresa, *(respaldo or "").split()}):
+            if not emp:
+                continue
+            deleted = lookup_deleted.get(emp, 0)
+            rem = lookup_remaining.get(emp, 0)
+            resumen.append(f"{emp}: eliminados={deleted}, restantes={rem}")
+            removed_keys = lookup_removed.get(emp, [])
+            if removed_keys:
+                resumen.append(
+                    f"{emp}: claves eliminadas de lookup_table ({len(removed_keys)}): {', '.join(removed_keys)}"
+                )
+            still_keys = lookup_still.get(emp, [])
+            if still_keys:
+                resumen.append(
+                    f"{emp}: claves aún presentes en lookup_table ({len(still_keys)}): {', '.join(still_keys)}"
+                )
+
+    files: list[str] = sorted({*report_paths, *delete_files, *purge_files})
+
+    extra_messages.extend(resumen)
+
+    final_status = "SUCCESS" if not scada_failed else "ERROR"
+    final_message = "Eliminación de tags completada."
+    if scada_failed:
+        final_message = "Eliminación completada con errores en SCADA."
+
+    payload = {
+        "status": final_status,
+        "message": final_message,
+        "files": files,
+        "details": extra_messages,
+    }
+    _store_result(final_status, payload["message"], files=files, extra={"details": extra_messages})
+    yield from _yield_summary(final_message, "success" if final_status == "SUCCESS" else "error")
+    yield _result_line(payload)

@@ -55,6 +55,7 @@ def apply_scada_updates(
   inserted_keys_map: dict[str, dict[str, set[str]]],
   env: dict[str, str],
   autoada_dir: str,
+  enable: bool = True,
   log_filename: str = "scada_crear_tag.log",
   record_status: Optional[Callable[[str, str, Optional[bool], Optional[str]], None]] = None,
 ) -> tuple[list[str], bool]:
@@ -151,7 +152,8 @@ def apply_scada_updates(
                   bit_specs.add((4, 1))
 
                 for tipo, bit in sorted(bit_specs):
-                  cmd = f". ~/.bash_profile && dbset -k 10 {tipo} 12 {base_key} {bit} = 1"
+                  valor = 1 if enable else 0
+                  cmd = f". ~/.bash_profile && dbset -k 10 {tipo} 12 {base_key} {bit} = {valor}"
                   try:
                     stdin, stdout, stderr = client.exec_command(cmd)
                     rc_cmd = stdout.channel.recv_exit_status()
