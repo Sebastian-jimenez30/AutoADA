@@ -6,6 +6,7 @@ import re
 from openpyxl import load_workbook
 from collections import defaultdict
 import argparse
+from datetime import datetime
 
 try:
     # cuando se ejecuta como paquete: python -m scripts.validacion_unifilares
@@ -126,7 +127,7 @@ def analizar_objetos(data, file_name, opennet):
         resultados.append({'File_Name': file_name,'Object_ID': obj_id,'Key': key,
             'Key_data_link': key_data_link,'Key_color_link': key_color_link,
             'Key_Status': key_status,'Symbol_Key': obj.get('Symbol Key', ''),
-            'Location': obj.get('Location', ''),'Data_Link': keys.get("data_link", ''),
+            'Symbol_Location': obj.get('Location', ''),'Data_Link': keys.get("data_link", ''),
             'Color_Link': keys.get("color_link", ''),'Symbol_Description': obj.get('Symbol_Description', '')})
 
     return resultados
@@ -175,13 +176,13 @@ def extract_data(unifilar, objeto, solo_symbol=False, capa1=False):
         keys = extraer_keys(value)
         data_key = keys.get('data_key')
         entry = {
-            'ID': key, 'Location': None, 'Data Link': data_key,
+            'ID': key, 'Symbol_Location': None, 'Data_Link': data_key,
             'Symbol Key': value.get('Symbol Key'), 'Tipo': tipo, 'Name_Key': None
         }
         if loc := value.get('Location'):
             coords = [p.strip() for p in loc.strip('() ').split(',')]
             if len(coords) >= 2:
-                entry['Location'] = f"( {coords[0]}, {coords[1]} )"
+                entry['Symbol_Location'] = f"( {coords[0]}, {coords[1]} )"
         if tipo == 'TextObject':
             if capa1:
                 if value.get('Overlay') != '1' or not value.get('String'):
@@ -191,17 +192,25 @@ def extract_data(unifilar, objeto, solo_symbol=False, capa1=False):
                 entry['Name_Key'] = value.get('String') or value.get('Format String')
         data.append(entry)
     df = pd.DataFrame(data)
-    cols = ['Location', 'Data Link', 'Symbol Key', 'Tipo']
+    # Definir columnas básicas sin Name_Key para el resultado final
+    cols = ['Symbol_Location', 'Data_Link', 'Symbol Key', 'Tipo']
+    
+    # Solo agregar Name_Key temporalmente si necesitamos procesar TextObjects
+    # pero no la incluimos en el resultado final a menos que sea estrictamente necesario
     if not solo_symbol and any(obj.get('Type') == 'TextObject' for obj in objetos.values()):
-        cols.append('Name_Key')
+        # Solo incluir Name_Key si es capa1 (donde se usa para identificar strings específicos)
+        if capa1:
+            cols.append('Name_Key')
+    
     for col in cols:
         df[col] = df.get(col, pd.Series([None]*len(df))).astype(str)
+    
     return df[cols]
 
 def group_by_level(df_limits, df_objects):
     df_objects = df_objects.copy()
-    df_objects = df_objects[df_objects['Location'].notna() & df_objects['Location'].str.contains(',')]
-    df_objects[['X', 'Y']] = (df_objects['Location'].str.strip('()').str.split(',', expand=True).iloc[:, :2].astype(float))
+    df_objects = df_objects[df_objects['Symbol_Location'].notna() & df_objects['Symbol_Location'].str.contains(',')]
+    df_objects[['X', 'Y']] = (df_objects['Symbol_Location'].str.strip('()').str.split(',', expand=True).iloc[:, :2].astype(float))
     resultados, asignados = {}, set()
     if isinstance(df_limits, tuple):
         df_limits = df_limits[0]
@@ -224,11 +233,11 @@ def pstation_review(dataframes_dict, scada_signal):
     resultados = []
     for nombre_df, df in dataframes_dict.items():
         df = pd.DataFrame(df) if isinstance(df, list) else df
-        if 'Data Link' not in df.columns:
-            print(f"Omitido: '{nombre_df}' no tiene la columna 'Data Link'.")
+        if 'Data_Link' not in df.columns:
+            print(f"Omitido: '{nombre_df}' no tiene la columna 'Data_Link'.")
             continue
         nombre_limpio = " ".join(nombre_df.upper().split())
-        merged = df.merge(scada_signal, left_on='Data Link', right_on='Key', how='left')
+        merged = df.merge(scada_signal, left_on='Data_Link', right_on='Key', how='left')
         no_coinciden = merged[merged['Key'].isna() | ~merged['Name'].fillna('').apply(
             lambda n: nombre_limpio in " ".join(str(n).upper().split()) or " ".join(str(n).upper().split()) in nombre_limpio
         )].copy()
@@ -237,20 +246,21 @@ def pstation_review(dataframes_dict, scada_signal):
             resultados.append(no_coinciden)
     if not resultados:
         return pd.DataFrame()
-    df_final = pd.concat(resultados, ignore_index=True).dropna(subset=['Data Link'])
-    df_final = df_final[df_final['Data Link'].notna() & (df_final['Data Link'] != '') & (df_final['Data Link'] != 'None')]
+    df_final = pd.concat(resultados, ignore_index=True).dropna(subset=['Data_Link'])
+    df_final = df_final[df_final['Data_Link'].notna() & (df_final['Data_Link'] != '') & (df_final['Data_Link'] != 'None')]
     df_final['Estado'] = 'No coincide SE'
-    df_final = df_final.rename(columns={'Location': 'Symbol_Location','Data Link': 'Data_Link','Name': 'Estacion Scada','Origen': 'Name Unifilar'})
-    if 'Key' in df_final.columns:
-        df_final = df_final.drop(columns=['Key'])
+    df_final = df_final.rename(columns={'Name': 'Estacion Scada','Origen': 'Name Unifilar'})
+    # Eliminar columnas no deseadas
+    columns_to_drop = ['Key', 'Symbol Key', 'Tipo', 'Name Key', 'Name_Key', 'X', 'Y']
+    df_final = df_final.drop(columns=[col for col in columns_to_drop if col in df_final.columns])
     return df_final[['Symbol_Location', 'Data_Link', 'Estacion Scada', 'Name Unifilar', 'Estado']]
 
 def add_scada_name(df_symbols, scada_signal):
     df = df_symbols.copy()
-    df['Data Link'] = df['Data Link'].astype(str)
+    df['Data_Link'] = df['Data_Link'].astype(str)
     scada = scada_signal[['Key', 'Name_key']].copy()
     scada['Key'] = scada['Key'].astype(str)
-    return df.merge(scada, left_on='Data Link', right_on='Key', how='left').drop(columns='Key')
+    return df.merge(scada, left_on='Data_Link', right_on='Key', how='left').drop(columns='Key')
 
 def get_coords(loc):
     try: return tuple(map(float, str(loc).strip('() ').split(',')[:2]))
@@ -258,31 +268,105 @@ def get_coords(loc):
 
 def analizar_proximidad(results2, symbol_keys_filtrar):
     nearest_texts_dict, sin_data_link, sin_texto = {}, {}, []
+    
+    def calcular_score_posicion(sym_x, sym_y, text_x, text_y):
+        """Calcula score basado solo en posición relativa"""
+        dist = np.hypot(text_x - sym_x, text_y - sym_y)
+        
+        # Si está muy lejos, score 0
+        if dist > 58:
+            return 0
+            
+        # Score base inverso a la distancia
+        score_base = max(0, 100 - dist * 2)
+        
+        # Calcular desplazamiento relativo
+        dx, dy = text_x - sym_x, text_y - sym_y
+        
+        # Bonus por posición (sin validar tipo de texto)
+        bonus_posicion = 0
+        
+        # Priorizar por posición
+        if abs(dy) > abs(dx):  # Movimiento vertical dominante
+            if dy > 10:      # Arriba
+                bonus_posicion = 60
+            elif dy < -10:   # Abajo  
+                bonus_posicion = 30
+        else:  # Movimiento horizontal dominante
+            if dx < -10:     # Izquierda
+                bonus_posicion = 50
+            elif dx > 10:    # Derecha
+                bonus_posicion = 40
+        
+        return score_base + bonus_posicion
+    
     for nivel, df in results2.items():
-        if not {'Tipo', 'Symbol Key', 'Location'}.issubset(df.columns): continue
+        if not {'Tipo', 'Symbol Key', 'Symbol_Location'}.issubset(df.columns): continue
         df = df.copy()
         df = df[(df['Tipo'] == 'TextObject') | ((df['Tipo'] == 'SymbolRefObject') & df['Symbol Key'].isin(symbol_keys_filtrar))]
-        if 'Data Link' in df:
-            mask_none = (df['Tipo'] == 'SymbolRefObject') & (df['Data Link'].isna() | df['Data Link'].eq('') | df['Data Link'].astype(str).str.lower().isin(['none', 'nan']))
+        if 'Data_Link' in df:
+            mask_none = (df['Tipo'] == 'SymbolRefObject') & (df['Data_Link'].isna() | df['Data_Link'].eq('') | df['Data_Link'].astype(str).str.lower().isin(['none', 'nan']))
             if mask_none.any():
-                df_none = df[mask_none].copy(); df_none['Nivel'] = nivel
+                df_none = df[mask_none].copy(); df_none['Name Unifilar'] = nivel
                 sin_data_link[nivel] = df_none
                 df = df[~mask_none]
         df_symbol, df_text = df[df['Tipo'] == 'SymbolRefObject'].copy(), df[df['Tipo'] == 'TextObject'].copy()
         if df_symbol.empty or df_text.empty: continue
-        df_symbol[['X', 'Y']] = df_symbol['Location'].apply(lambda loc: pd.Series(get_coords(loc)))
-        df_text[['X', 'Y']] = df_text['Location'].apply(lambda loc: pd.Series(get_coords(loc)))
+        df_symbol[['X', 'Y']] = df_symbol['Symbol_Location'].apply(lambda loc: pd.Series(get_coords(loc)))
+        df_text[['X', 'Y']] = df_text['Symbol_Location'].apply(lambda loc: pd.Series(get_coords(loc)))
         df_symbol.dropna(subset=['X', 'Y'], inplace=True)
         df_text.dropna(subset=['X', 'Y'], inplace=True)
         nearest_texts = []
         for _, sym in df_symbol.iterrows():
-            x0, y0 = sym['X'], sym['Y']
-            df_text['dist'] = np.hypot(df_text['X'] - x0, df_text['Y'] - y0)
-            nearest = df_text.sort_values('dist').query("dist <= 51 and Name_Key.str.lower() != 's'", engine='python')
-            if not nearest.empty:
-                row = nearest.iloc[0]
-                nearest_texts.append({'Symbol_Location': sym['Location'],'Symbol_Name': sym.get('Name_key'),'Data_Link': sym.get('Data Link', ''),
-                                      'Text_Name': row.get('Name_Key', ''),'Text_Location': row.get('Location', ''),'Name Unifilar': nivel})
+            sym_x, sym_y = sym['X'], sym['Y']
+            
+            # Calcular scores para todos los textos
+            candidatos = []
+            for _, texto in df_text.iterrows():
+                # Filtrar textos no deseados: "s" y "25"
+                texto_key = str(texto.get('Name_Key', '')).strip().lower()
+                if texto_key in ['s', '25']:
+                    continue
+                    
+                score = calcular_score_posicion(sym_x, sym_y, texto['X'], texto['Y'])
+                
+                if score > 0:
+                    candidatos.append({
+                        'score': score,
+                        'texto': texto
+                    })
+            
+            # Filtrar candidatos que cumplan con los criterios de validación
+            def es_texto_valido(texto_key):
+                """Valida que el texto no tenga espacios y no supere 10 caracteres"""
+                if not texto_key or pd.isna(texto_key):
+                    return False
+                texto_str = str(texto_key).strip()
+                return ' ' not in texto_str and len(texto_str) <= 10
+            
+            # Seleccionar el mejor candidato que cumpla criterios
+            if candidatos:
+                # Ordenar candidatos por score descendente
+                candidatos_ordenados = sorted(candidatos, key=lambda x: x['score'], reverse=True)
+                
+                # Buscar el primer candidato que cumpla los criterios
+                mejor = None
+                for candidato in candidatos_ordenados:
+                    texto_key = candidato['texto'].get('Name_Key', '')
+                    if es_texto_valido(texto_key):
+                        mejor = candidato
+                        break
+                
+                # Si encontramos un texto válido, usarlo
+                if mejor:
+                    row = mejor['texto']
+                    
+                    nearest_texts.append({'Symbol_Location': sym['Symbol_Location'],'Symbol_Name': sym.get('Name_key'),'Data_Link': sym.get('Data_Link', ''),
+                                          'Text_Name': row.get('Name_Key', ''),'Text_Location': row.get('Symbol_Location', ''),'Name Unifilar': nivel})
+                else:
+                    # Si no hay textos válidos (sin espacios y ≤10 caracteres), añadir a sin texto
+                    sym_copy = sym.copy(); sym_copy['Name Unifilar'] = nivel
+                    sin_texto.append(sym_copy)
             else:
                 sym_copy = sym.copy(); sym_copy['Name Unifilar'] = nivel
                 sin_texto.append(sym_copy)
@@ -296,27 +380,77 @@ def analizar_proximidad(results2, symbol_keys_filtrar):
     if not sin_data_link_df.empty: sin_data_link_df['Estado'] = 'Sin Data Link'
     if not all_objects.empty: all_objects['Estado'] = 'Texto más cercano asignado'
     if not sin_texto_df.empty: sin_texto_df['Estado'] = 'Sin texto cercano'
-    rename_cols = {'Nivel': 'Name Unifilar', 'Location': 'Symbol_Location', 'Data Link': 'Data_Link'}
+    
+    # Renombrar columnas y eliminar las no deseadas
+    columns_to_drop = ['Text_Location', 'Symbol Key', 'Tipo', 'Name Key', 'Name_Key', 'X', 'Y']
+    
     for df in [filtered_all, sin_data_link_df, all_objects, sin_texto_df]:
         if not df.empty:
-            df = df.copy(); df.rename(columns=rename_cols, inplace=True)
+            df = df.copy()
+            df.drop(columns=[col for col in columns_to_drop if col in df.columns], inplace=True)
     return filtered_all, sin_data_link_df, all_objects, sin_texto_df
 
-def filtrar_textos_unidad(unifilar, SCADA_SIGNAL):
-    df_text_units = extract_data(unifilar, 'TextObject')
-    df_text_units = df_text_units[df_text_units['Data Link'].notna() & (df_text_units['Data Link'] != '')]
-    df_text_units = df_text_units[df_text_units['Data Link'].astype(str).str.len() == 8]
-    df_en_scada = pd.merge(df_text_units, SCADA_SIGNAL[['Key', 'pUNIT']], left_on='Data Link', right_on='Key', how='left')
+def filtrar_textos_unidad(unifilar, SCADA_SIGNAL, name_unifilar=None):
+    # Extraer datos con Name_Key para procesamiento interno
+    objetos = unifilar.get('ObjectList', {})
+    data = []
+    for key, value in objetos.items():
+        tipo = value.get('Type')
+        if tipo != 'TextObject':
+            continue
+        keys = extraer_keys(value)
+        data_key = keys.get('data_key')
+        entry = {
+            'ID': key, 'Symbol_Location': None, 'Data_Link': data_key,
+            'Symbol Key': value.get('Symbol Key'), 'Tipo': tipo, 'Name_Key': None
+        }
+        if loc := value.get('Location'):
+            coords = [p.strip() for p in loc.strip('() ').split(',')]
+            if len(coords) >= 2:
+                entry['Symbol_Location'] = f"( {coords[0]}, {coords[1]} )"
+        entry['Name_Key'] = value.get('String') or value.get('Format String')
+        data.append(entry)
+    
+    df_text_units = pd.DataFrame(data)
+    if df_text_units.empty:
+        return pd.DataFrame()
+    
+    # Filtrar y procesar
+    df_text_units = df_text_units[df_text_units['Data_Link'].notna() & (df_text_units['Data_Link'] != '')]
+    df_text_units = df_text_units[df_text_units['Data_Link'].astype(str).str.len() == 8]
+    df_en_scada = pd.merge(df_text_units, SCADA_SIGNAL[['Key', 'pUNIT']], left_on='Data_Link', right_on='Key', how='left')
     df_en_scada['pUNIT'] = df_en_scada['pUNIT'].fillna('').str.strip()
     df_en_scada['Name_Key'] = df_en_scada['Name_Key'].fillna('')
     df_en_scada_filtrado = df_en_scada[~df_en_scada.apply(lambda fila: fila['pUNIT'] in fila['Name_Key'], axis=1)]
     df_en_scada_filtrado = df_en_scada_filtrado.copy()
     df_en_scada_filtrado['Estado'] = 'Texto no contiene unidad'
+    
+    # Agregar Name Unifilar
+    if name_unifilar:
+        df_en_scada_filtrado['Name Unifilar'] = name_unifilar
+    
+    # Renombrar Name_Key a Text_Name y eliminar columnas no deseadas
     df_en_scada_filtrado = df_en_scada_filtrado.drop(columns=['Tipo', 'Key'], errors='ignore')
     df_en_scada_filtrado = df_en_scada_filtrado.rename(columns={
-        'Name_Key': 'Text_Name', 'Location': 'Symbol_Location', 'Data Link':'Data_Link', 'pUNIT':'Text_Scada'
+        'Name_Key': 'Text_Name', 'pUNIT':'Text_Scada'
     })
+    
+    # Eliminar todas las columnas no deseadas incluyendo Symbol Key
+    columns_to_drop = ['Symbol Key', 'Name Key', 'X', 'Y']
+    df_en_scada_filtrado = df_en_scada_filtrado.drop(columns=[col for col in columns_to_drop if col in df_en_scada_filtrado.columns])
+    
     return df_en_scada_filtrado
+
+def limpiar_dataframe_final(df):
+    """Limpia el DataFrame final eliminando columnas no deseadas"""
+    if df.empty:
+        return df
+    
+    # Eliminar TODAS las variantes de columnas no deseadas
+    columns_to_drop = ['Text_Location', 'Symbol Key', 'Tipo', 'Name Key', 'Name_Key', 'X', 'Y', 'Name_key', 'ID']
+    df = df.drop(columns=[col for col in columns_to_drop if col in df.columns])
+    
+    return df
 
 # =====================
 # ANÁLISIS PRINCIPAL Y EXPORTACIÓN DE REPORTES 
@@ -337,6 +471,11 @@ def run_validaciones_unifilar(archivos_unifilar, output_dir, logger_in, SCADA_DI
             Logger.write_log().log_all('info', f'Procesando archivo unifilar: {archivo_unifilar}', logger_console, logger)
             data = leer_archivo(archivo_unifilar)
             SCADA_SIGNAL, opennet_status = cargar_datos_scada(SCADA_DIR)
+            
+            # Extraer el name_unifilar del DisplayName
+            nombre_display = data.get('DisplayName', [''])[0]
+            name_unifilar = re.split(r'[_\.]', nombre_display)[0] if nombre_display else os.path.splitext(os.path.basename(archivo_unifilar))[0]
+            
             resultados = analizar_objetos(data, os.path.basename(archivo_unifilar), opennet_status)
             Logger.write_log().log_all('info', 'Construyendo DataFrame de claves...', logger_console, logger)
             df_keys = pd.DataFrame(resultados)
@@ -382,7 +521,8 @@ def run_validaciones_unifilar(archivos_unifilar, output_dir, logger_in, SCADA_DI
                 'EQUIPOS_DE_MANIOBRA.LIB2 12', 'EQUIPOS_DE_MANIOBRA.LIB2 14']
             symbols_with_text, sin_data_link, _, sin_text = analizar_proximidad(results2, symbol_keys_filtrar)
 
-            df_en_scada_filtrado = filtrar_textos_unidad(data, SCADA_SIGNAL)
+            # Pasar name_unifilar a la función
+            df_en_scada_filtrado = filtrar_textos_unidad(data, SCADA_SIGNAL, name_unifilar)
 
             for df in [df_diferente_station, symbols_with_text, sin_data_link, sin_text, df_en_scada_filtrado]:
                 if not df.empty and 'Estado' in df.columns:
@@ -401,17 +541,21 @@ def run_validaciones_unifilar(archivos_unifilar, output_dir, logger_in, SCADA_DI
             errores.append((archivo_unifilar, str(e)))
 
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Generar timestamp para los nombres de archivos
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     if reportes_keys:
         df_keys_total = pd.concat(reportes_keys, ignore_index=True)
-        path_excel_keys = os.path.join(output_dir, 'Report_unifilares_keys.xlsx')
+        path_excel_keys = os.path.join(output_dir, f'Report_unifilares_keys_{timestamp}.xlsx')
         df_keys_total.to_excel(path_excel_keys, index=False)
         aplicar_formato_excel(path_excel_keys)
         Logger.write_log().log_all('info', f"Reporte global de claves guardado en: {path_excel_keys}", logger_console, logger)
     if reportes_finales:
         df_final_total = pd.concat(reportes_finales, ignore_index=True)
-        if 'Name_key' in df_final_total.columns:
-            df_final_total = df_final_total.drop(columns=['Name_key'])
-        path_excel_final = os.path.join(output_dir, 'Report_unifilares_final.xlsx')
+        # Aplicar limpieza final al DataFrame
+        df_final_total = limpiar_dataframe_final(df_final_total)
+        path_excel_final = os.path.join(output_dir, f'Report_unifilares_final_{timestamp}.xlsx')
         df_final_total.to_excel(path_excel_final, index=False)
         aplicar_formato_excel(path_excel_final)
         Logger.write_log().log_all('info', f"Reporte global final guardado en: {path_excel_final}", logger_console, logger)

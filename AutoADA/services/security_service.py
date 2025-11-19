@@ -27,7 +27,7 @@ class SecurityService:
         return _VAULT_BY_UBICACION.get(ubicacion)
 
     def empresas_permitidas(self, ubicacion: Ubicacion) -> list[str]:
-        if ubicacion == "ITCO": return ["ITCO","TRA","REPS"]
+        if ubicacion == "ITCO": return ["ITCO","TRA"]
         if ubicacion == "REP":  return ["REPS","REPP"]
         return ["ITCO","TRA","REPS","REPP"]
 

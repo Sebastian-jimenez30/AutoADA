@@ -66,7 +66,7 @@ def _build_verification_summary() -> List[str]:
         lines.append(f"{emp}:")
 
         for step, data in status.items():
-            estado = "✅ OK" if data.get("ok") else "❌ ERROR" if data.get("ok") is False else "⚠️  PENDIENTE"
+            estado = "[OK]" if data.get("ok") else "[ERROR]" if data.get("ok") is False else "[PENDIENTE]"
             mensajes = data.get("messages", [])
             lines.append(f"  - {step}: {estado}")
             for msg in mensajes:

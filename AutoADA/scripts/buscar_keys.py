@@ -110,10 +110,10 @@ def main():
     keys2 = df[0].tolist()
     keys = [str(item).strip().upper() for item in keys2]
 
-    # Valida llaves (8 dígitos o con %)
+    # Valida llaves (8 caracteres alfanuméricos o con %)
     def es_key_valida(k: str) -> bool:
         k = k.strip().upper()
-        return ('%' in k) or (re.match(r'^\d{8}$', k) is not None)
+        return ('%' in k) or (re.match(r'^[A-Z0-9]{8}$', k) is not None)
 
     keys = [k for k in keys if es_key_valida(k)]
 

@@ -114,7 +114,16 @@ def convertir(group_df, respaldo_group_df, look_df, respaldo_look_df,
 
     # Procesamiento de look_ITCO y look_TRA
     for df in [look_df, respaldo_look_df]:
-        df[['Key', 'Type']] = df['Key-Type'].str.split('.', expand=True)
+        # Split safely with exactly 2 columns handling edge cases
+        split_result = df['Key-Type'].str.split('.', expand=True, n=1)
+        if split_result.shape[1] == 1:
+            # Only one column, no dot found - treat as Key with empty Type
+            df['Key'] = split_result[0]
+            df['Type'] = ''
+        else:
+            # Two columns, normal case
+            df['Key'] = split_result[0]
+            df['Type'] = split_result[1]
 
     look_site_sc = pd.merge(scada_total_site1, look_df, left_on='Key', right_on='Key', how='right')[
         ['Key-Type', 'Key', 'Type', 'Value', 'Seal', 'Colector']
@@ -139,15 +148,6 @@ def inicializar_dataframes(site, respaldo):
     look_respaldo = safe_read_csv(p_respaldo['LOOKUP'], dtype=str)
     group_site = safe_read_csv(p_site['GROUP'], dtype=str)
     group_respaldo = safe_read_csv(p_respaldo['GROUP'], dtype=str)
-    
-    # Filtrar solo señales que empiecen con SCADA/ en el UID
-    logger.info(f"Filas originales en group_site: {len(group_site)}")
-    group_site = group_site[group_site['UID'].str.startswith('SCADA/', na=False)]
-    logger.info(f"Filas filtradas en group_site (UID empieza con 'SCADA/'): {len(group_site)}")
-    
-    logger.info(f"Filas originales en group_respaldo: {len(group_respaldo)}")
-    group_respaldo = group_respaldo[group_respaldo['UID'].str.startswith('SCADA/', na=False)]
-    logger.info(f"Filas filtradas en group_respaldo (UID empieza con 'SCADA/'): {len(group_respaldo)}")
 
     scada_status_site = safe_read_csv(p_site['SCADA_STATUS'], dtype=str).dropna(how='all')
     scada_analogs_site = safe_read_csv(p_site['SCADA_ANALOGS'], dtype=str).dropna(how='all')
