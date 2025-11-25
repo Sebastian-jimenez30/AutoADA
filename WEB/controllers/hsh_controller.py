@@ -18,6 +18,7 @@ import pandas as pd
 
 from services.hsh_services import (
     PiSnapshotResult,
+    SCADA_HOSTS_FULL,
     apply_scada_updates,
     collect_pi_snapshots,
 )
@@ -323,17 +324,34 @@ def crear_tags_pipeline(
         return lines
 
 
+    def _host_to_prefix(host: str) -> str:
+        h = (host or "").strip()
+        if not h:
+            return ""
+        lowered = h.lower()
+        cut = None
+        for marker in ("sca", "qds", "his"):
+            idx = lowered.find(marker)
+            if idx != -1:
+                cut = idx
+                break
+        return h[:cut] if cut is not None else h
+
     def _derive_prefixes(emp_u: str) -> list[str]:
+        allowed: set[str] = set()
+        for host in SCADA_HOSTS_FULL.get(emp_u, []) or []:
+            pref = _host_to_prefix(host)
+            if pref:
+                allowed.add(pref)
+
         prefixes: list[str] = []
         hint = apply_import_servers.get(emp_u)
         if hint:
-            lowered = hint.lower()
-            cut = next((lowered.find(marker) for marker in ("sca", "qds", "his") if marker in lowered), -1)
-            pref = hint[:cut] if cut != -1 else hint
-            if pref:
+            pref = _host_to_prefix(hint)
+            if pref and (not allowed or pref in allowed):
                 prefixes.append(pref)
-        for pref in company_prefixes(emp_u) or []:
-            if pref and pref not in prefixes:
+        for pref in sorted(allowed):
+            if pref not in prefixes:
                 prefixes.append(pref)
         return [p for p in prefixes if p]
 

@@ -26,7 +26,7 @@ from scripts.import_base import company_prefixes  # type: ignore
 
 SCADA_HOSTS_FULL: Dict[str, list[str]] = {
   "ITCO": ["itco1sca01", "itco1sca02", "itco1qds01"],
-  "TRA": ["tra1sca01", "tra1sca02"],
+  "TRA": ["tra1sca01", "tra1sca02", "tra1qds01"],
   "REPS": ["rep1sca01", "rep1sca02", "rep1qds01"],
   "REPP": ["rep2sca01", "rep2sca02", "rep2qds01"],
 }
@@ -267,15 +267,17 @@ def collect_pi_snapshots(
 
     def _collect_prefixes(emp_u: str, hint: Optional[str]) -> List[str]:
       prefixes: List[str] = []
-      prefixes.extend(_derive_prefixes_from_hint(hint))
-      env_sca_hosts = os.environ.get("SCA_HOSTS")
-      if env_sca_hosts:
-        for host in env_sca_hosts.split(","):
-          host = host.strip()
-          if host:
-            prefixes.extend(_derive_prefixes_from_hint(host))
-      for pref in company_prefixes(emp_u) or []:
-        if pref and pref not in prefixes:
+      allowed: set[str] = set()
+      for host in SCADA_HOSTS_FULL.get(emp_u, []) or []:
+        for pref in _derive_prefixes_from_hint(host):
+          if pref:
+            allowed.add(pref)
+      if hint:
+        for pref in _derive_prefixes_from_hint(hint):
+          if pref and (not allowed or pref in allowed):
+            prefixes.append(pref)
+      for pref in sorted(allowed):
+        if pref not in prefixes:
           prefixes.append(pref)
       return [pref for pref in prefixes if pref]
 
