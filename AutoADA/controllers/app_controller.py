@@ -24,6 +24,7 @@ from interfaces.marco_hsh import crear_marco_hsh
 from interfaces.marco_bienvenida import crear_marco_bienvenida
 from interfaces.marco_pruebas_pyp import crear_marco_pruebas_pyp
 from interfaces.marco_consultar import crear_marco_consultar
+from handlers.actualizar_datos import ejecutar_actualizar_datos_default
 
 from ui.theme import PRIMARY, SPACING_M, BACKGROUND
 from ui.components.navbar import build_navbar
@@ -96,6 +97,8 @@ class AppController:
         self.boton_eliminar_tag_hsh = None
         self.lbl_archivo_hsh_eliminar = None
         self.sidebar_nav = None
+        self._status_manual = False
+        self._auto_status_active = False
 
         self.opcion_empresa_pyp = tk.StringVar(value="Empresa...")
         self.opcion_dominio_pyp = tk.StringVar(value="Dominio...")
@@ -132,8 +135,8 @@ class AppController:
         self.router.register("bienvenida", lambda: crear_marco_bienvenida(self))
 
     def abrir_actualizacion_buscar_keys(self) -> None:
-        """Abre la vista de actualizacion de datos (Buscar > Keys)."""
-        self._on_menu_select("Buscar", "Keys", 2)
+        """Ejecuta la actualización de datos usando el perfil default."""
+        ejecutar_actualizar_datos_default(self)
 
 
     def set_vault(self, vault: Dict[str, Any]) -> None:
@@ -278,6 +281,16 @@ class AppController:
         console = getattr(self, "console", None)
         if console and hasattr(console, "has_stop_handler") and console.has_stop_handler():
             console.set_stop_enabled(running)
+        if not hasattr(self, "statusbar"):
+            return
+        if running:
+            if not getattr(self, "_status_manual", False) and not getattr(self, "_auto_status_active", False):
+                self.statusbar.start("Procesando tareas...", indeterminate=True)
+                self._auto_status_active = True
+        else:
+            if getattr(self, "_auto_status_active", False) and not getattr(self, "_status_manual", False):
+                self.statusbar.success("Listo")
+                self._auto_status_active = False
 
     def stop_running_tasks(self) -> None:
         if self.tasks.stop_all():
@@ -368,18 +381,26 @@ class AppController:
     def start_status(self, msg: str, indeterminate: bool = True):
         if hasattr(self, "statusbar"):
             self.statusbar.start(msg, indeterminate=indeterminate)
+            self._status_manual = True
+            self._auto_status_active = False
 
     def success_status(self, msg: str = "Listo"):
         if hasattr(self, "statusbar"):
             self.statusbar.success(msg)
+            self._status_manual = False
+            self._auto_status_active = False
 
     def error_status(self, msg: str):
         if hasattr(self, "statusbar"):
             self.statusbar.error(msg)
+            self._status_manual = False
+            self._auto_status_active = False
 
     def stop_status(self):
         if hasattr(self, "statusbar"):
             self.statusbar.stop()
+            self._status_manual = False
+            self._auto_status_active = False
 
 
     def _setup_menu(self):

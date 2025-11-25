@@ -4,6 +4,7 @@ import os
 import sys
 import argparse
 import uuid
+import unicodedata
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from copy import copy
@@ -45,6 +46,46 @@ def get_args():
     parser.add_argument('empresa', type=str, help='Nombre de la empresa')
     return parser.parse_args()
 
+def normalizar_texto_sin_tildes(texto):
+    """
+    Remueve tildes y acentos de un texto, manteniendo otros caracteres especiales.
+    """
+    if pd.isna(texto) or texto == '':
+        return texto
+    
+    # Convertir a string si no lo es
+    texto_str = str(texto)
+    
+    # Normalizar usando NFD (descomposición) para separar caracteres base de acentos
+    texto_normalizado = unicodedata.normalize('NFD', texto_str)
+    
+    # Filtrar solo caracteres que no sean marcas diacríticas (tildes, acentos)
+    texto_sin_tildes = ''.join(char for char in texto_normalizado 
+                              if unicodedata.category(char) != 'Mn')
+    
+    return texto_sin_tildes
+
+def normalizar_dataframe(df):
+    """
+    Normaliza todas las columnas de texto de un DataFrame removiendo tildes.
+    """
+    if df.empty:
+        return df
+        
+    df_normalizado = df.copy()
+    
+    # Aplicar normalización a todas las columnas de tipo object (string)
+    for columna in df_normalizado.columns:
+        try:
+            if df_normalizado[columna].dtype == 'object':
+                df_normalizado[columna] = df_normalizado[columna].apply(normalizar_texto_sin_tildes)
+        except Exception as e:
+            # Si hay error con una columna específica, continuar con las demás
+            Logger.write_log().log_all('warning', f"Error normalizando columna '{columna}': {e}", logger_console, logger)
+            continue
+    
+    return df_normalizado
+
 def procesar_datos():
     try:
         Logger.write_log().log_all('info', 'Inicia asignacion SCADA FEP ICCP', logger_console, logger)
@@ -53,6 +94,15 @@ def procesar_datos():
         excel_path = os.path.join(base_dir, 'out', 'Load', 'Señales_with_keys.xlsx')
         dfs = pd.read_excel(excel_path, sheet_name=None, header=0, dtype={'Scada Key': str})
         Logger.write_log().log_all('info', 'Archivo Excel cargado', logger_console, logger)
+
+        # Normalizar texto removiendo tildes en todas las hojas
+        for sheet_name, df in dfs.items():
+            if not df.empty:
+                # Normalizar nombres de columnas
+                df.columns = [normalizar_texto_sin_tildes(str(col)) if pd.notna(col) else col for col in df.columns]
+                # Normalizar contenido
+                dfs[sheet_name] = normalizar_dataframe(df)
+        Logger.write_log().log_all('info', 'Texto normalizado (tildes removidas)', logger_console, logger)
 
         # Verificar si las hojas existen y procesarlas
         status_df = dfs.get('STATUS', pd.DataFrame())
@@ -175,7 +225,7 @@ def procesar_datos():
                 control_fep1['Indic'] = 1
                 control_fep1['SourceKey'] = control_fep1['Scada Key']
                 control_fep1['control_type'] = control_fep1['Command Type'].map({'RC': 3, 'SC': 5, 'DC': 6})
-                control_fep1['point_address'] = control_fep1['Command Address'].astype(int)
+                control_fep1['point_address'] = pd.to_numeric(control_fep1['Command Address'], errors='coerce').fillna(0).astype(int)
                 control_fep1['pRTU'] = control_fep1['RTU'].apply(extraer_subcadena)
                 control_fep1['proto_parms;0'] = control_fep1['SourceKey'].notna().astype(int)
                 control_fep1['proto_parms;1'] = control_fep1['Command Type'].apply(lambda x: 1 if x == 'DC' else 0)
@@ -504,7 +554,13 @@ def procesar_datos():
             """Guardar todas las señales en la plantilla ScadaLoad.xlsx"""
             # Filtrar DataFrames con datos
             cmd_columns = ['Command Type', 'Command Address', 'Scada Key', 'Type', 'Name', 'RTU']
-            cmd_sheet = status_df_orig[status_df_orig['Type'].isin(['T_I&C','T_CTL','T_R/L'])]
+            
+            # Verificar si status_df_orig está vacío antes de intentar acceder a columnas
+            if not status_df_orig.empty:
+                cmd_sheet = status_df_orig[status_df_orig['Type'].isin(['T_I&C','T_CTL','T_R/L'])]
+            else:
+                cmd_sheet = pd.DataFrame()
+                
             if not cmd_sheet.empty and all(col in cmd_sheet.columns for col in cmd_columns):
                 cmd_sheet = cmd_sheet[cmd_columns]
                 cmd_sheet['Indic'] = range(1, len(cmd_sheet) + 1)
@@ -520,6 +576,10 @@ def procesar_datos():
                 # Ordenar columnas en el orden específico requerido
                 column_order = ['Indic', 'ScadaKey', 'pRTU', 'ControlAddress', 'ControlParm','Control Subtype', 'Mode', 'Control Type', 'Control Format', 'ScadaType']
                 cmd_sheet = cmd_sheet[column_order]
+            else:
+                # Si no hay datos válidos para comandos, usar DataFrame vacío
+                cmd_sheet = pd.DataFrame()
+                
             sheets_data = {name: df.copy() for name, df in 
                           [('STATUS', status_df_orig), ('ANALOG', analog_df_orig), ('ICCP', iccp_df_orig), ('CONTROLS(FEP)', cmd_sheet)]
                           if df is not None and not df.empty}

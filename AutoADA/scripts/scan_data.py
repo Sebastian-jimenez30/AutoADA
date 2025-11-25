@@ -6,6 +6,7 @@ import numpy as np
 import sys
 import traceback
 import warnings
+import unicodedata
 
 # Suprimir warnings de pandas y openpyxl
 warnings.filterwarnings('ignore', category=FutureWarning)
@@ -42,6 +43,50 @@ def get_args():
 # =============================
 # Funciones
 # =============================
+def normalizar_texto_sin_tildes(texto):
+    """
+    Remueve tildes y acentos de un texto, manteniendo otros caracteres especiales.
+    """
+    if pd.isna(texto) or texto == '':
+        return texto
+    
+    # Convertir a string si no lo es
+    texto_str = str(texto)
+    
+    # Normalizar usando NFD (descomposición) para separar caracteres base de acentos
+    texto_normalizado = unicodedata.normalize('NFD', texto_str)
+    
+    # Filtrar solo caracteres que no sean marcas diacríticas (tildes, acentos)
+    texto_sin_tildes = ''.join(char for char in texto_normalizado 
+                              if unicodedata.category(char) != 'Mn')
+    
+    return texto_sin_tildes
+
+def normalizar_dataframe(df):
+    """
+    Normaliza todas las columnas de texto de un DataFrame removiendo tildes.
+    """
+    if df.empty:
+        return df
+        
+    df_normalizado = df.copy()
+    
+    # Aplicar normalización solo a columnas válidas de tipo object (string)
+    for columna in df_normalizado.columns:
+        try:
+            # Verificar que la columna sea válida (no NaN, no espacios vacíos)
+            if pd.isna(columna) or str(columna).strip() == '' or str(columna).lower() == 'nan':
+                continue
+                
+            # Verificar que la columna tenga tipo object
+            if df_normalizado[columna].dtype == 'object':
+                df_normalizado[columna] = df_normalizado[columna].apply(normalizar_texto_sin_tildes)
+        except Exception as e:
+            # Si hay error con una columna específica, continuar con las demás
+            continue
+    
+    return df_normalizado
+
 def leer_hojas_excel(ruta_archivo):
     Logger.write_log().log_all('info', f"Leyendo archivo Excel: {ruta_archivo}", logger_console, logger)
     try:
@@ -58,6 +103,20 @@ def leer_hojas_excel(ruta_archivo):
 
             # Limpiar y reiniciar dataframe
             df = df.dropna(how='all').reset_index(drop=True)
+            
+            # Normalizar nombres de columnas removiendo tildes y limpiando nombres inválidos
+            if not df.empty:
+                new_columns = []
+                for i, col in enumerate(df.columns):
+                    if pd.isna(col) or str(col).strip() == '' or str(col).lower() == 'nan':
+                        new_columns.append(f'Column_{i}')  # Nombre genérico para columnas inválidas
+                    else:
+                        new_columns.append(normalizar_texto_sin_tildes(str(col)))
+                df.columns = new_columns
+                
+                # Normalizar contenido removiendo tildes
+                df = normalizar_dataframe(df)
+            
             dfs_procesados[nombre_hoja] = df
 
         return dfs_procesados

@@ -4,7 +4,7 @@
     "scada": {
       "enabled": true,
       "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
-      "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/db_sca_1.sh",
+      "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/importar_all.sh",
       "files": "ALL"
     },
     "hsh": {
@@ -29,7 +29,10 @@
   "usecases": {
     "buscar_key": {
       "scada": {
-        "enabled": true
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
       },
       "hsh": {
         "enabled": true
@@ -40,7 +43,10 @@
     },
     "buscar_keys": {
       "scada": {
-        "enabled": true
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
       },
       "hsh": {
         "enabled": true
@@ -78,6 +84,20 @@
       }
     },
     "hsh_cambiar_key": {
+      "scada": {
+        "enabled": true,
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
+        "files": "ALL"
+      },
+      "hsh": {
+        "enabled": true
+      },
+      "ods": {
+        "enabled": false
+      }
+    },
+    "hsh_eliminar_tag": {
       "scada": {
         "enabled": true,
         "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",

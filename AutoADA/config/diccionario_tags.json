@@ -2351,7 +2351,7 @@
     ],
     "STATUS": [
         ".Q",
-        ".Value"
+        ".State"
     ],
     "X": [
         ".Q",
@@ -2450,6 +2450,70 @@
         ".State"
     ],
     "POS_SECT": [
+        ".Q",
+        ".State"
+    ],
+    "CONN": [
+        ".Q",
+        ".State"
+    ],
+    "PRES_ABS_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_ABS1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_ABS2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "PRES_ABS3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_VOL_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_VOL1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_VOL2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "HUME_VOL3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI1_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI2_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI3_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "ROCI_SF6": [
+        ".Q",
+        ".Value"
+    ],
+    "MOD_CAPAC": [
+        ".Q",
+        ".State"
+    ],
+    "MOD_MONIT": [
+        ".Q",
+        ".State"
+    ],
+    "MOD_INDUC": [
         ".Q",
         ".State"
     ]
