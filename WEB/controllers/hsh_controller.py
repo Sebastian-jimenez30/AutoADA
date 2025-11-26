@@ -996,6 +996,168 @@ def get_last_eliminar_result() -> EliminarResult | None:
     return last_eliminar_result
 
 
+def load_eliminar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_eliminar_result
+    if result is None:
+        return None
+
+    def _normalize_path(path: str) -> str:
+        p = os.path.normpath(path)
+        if not os.path.isabs(p):
+            p = os.path.normpath(os.path.join(AUTOADA_DIR, p))
+        return p
+
+    # Localizar el Excel de verificación (si existe)
+    report_path = None
+    if isinstance(result.extra, dict):
+        report_path = result.extra.get("report_path")
+    if not report_path:
+        for path in result.files:
+            if str(path).lower().endswith(".xlsx"):
+                report_path = path
+                break
+    if report_path:
+        report_path = _normalize_path(report_path)
+        if not os.path.isfile(report_path):
+            report_path = None
+
+    # Localizar CSV (delete/purge) para mostrarlos como hojas virtuales
+    csv_files: list[str] = []
+    for path in result.files:
+        if str(path).lower().endswith(".csv"):
+            norm = _normalize_path(path)
+            if os.path.isfile(norm):
+                csv_files.append(norm)
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+        "report_path": report_path,
+    }
+
+    datasets: dict[str, dict[str, Any]] = {}
+    download_map: dict[str, str] = {}
+
+    # Cargar sheets desde el Excel (si existe)
+    if report_path:
+        try:
+            workbook = load_workbook(report_path, read_only=True, data_only=True)
+        except Exception:
+            workbook = None
+        if workbook:
+            try:
+                for sheet_name in workbook.sheetnames:
+                    worksheet = workbook[sheet_name]
+                    rows_iter = worksheet.iter_rows(values_only=True)
+                    try:
+                        headers_raw = next(rows_iter)
+                    except StopIteration:
+                        headers_raw = []
+
+                    headers: list[str] = []
+                    for idx, header in enumerate(headers_raw or (), start=1):
+                        if isinstance(header, str):
+                            clean = header.strip()
+                            headers.append(clean if clean else f"Columna {idx}")
+                        elif header is None:
+                            headers.append(f"Columna {idx}")
+                        else:
+                            headers.append(str(header))
+
+                    preview_rows: list[dict[str, Any]] = []
+                    row_count = 0
+                    has_more = False
+
+                    for row in rows_iter:
+                        row_count += 1
+                        row_dict: dict[str, Any] = {}
+                        for col_idx, header in enumerate(headers):
+                            value = row[col_idx] if col_idx < len(row) else None
+                            row_dict[header] = value
+                        if row_count <= limit:
+                            preview_rows.append(row_dict)
+                        else:
+                            has_more = True
+                            break
+
+                    datasets[sheet_name] = {
+                        "columns": headers,
+                        "rows": preview_rows,
+                        "total": row_count,
+                        "has_more": has_more,
+                        "download": report_path,
+                    }
+                    download_map[sheet_name] = f"/hsh/eliminar/result/download?path={quote(report_path)}"
+            finally:
+                workbook.close()
+
+    # Cargar CSV como hojas virtuales
+    import csv as _csv
+
+    for csv_path in csv_files:
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="ignore", newline="") as fh:
+                reader = _csv.reader(fh)
+                rows_list = list(reader)
+        except Exception:
+            continue
+        if not rows_list:
+            continue
+        headers = [f"Columna {i+1}" for i in range(len(rows_list[0]))]
+        preview_rows: list[dict[str, Any]] = []
+        row_count = 0
+        has_more = False
+        for row in rows_list:
+            row_count += 1
+            row_dict = {}
+            for idx, header in enumerate(headers):
+                row_dict[header] = row[idx] if idx < len(row) else None
+            if row_count <= limit:
+                preview_rows.append(row_dict)
+            else:
+                has_more = True
+                break
+        sheet_name = os.path.splitext(os.path.basename(csv_path))[0]
+        datasets[sheet_name] = {
+            "columns": headers,
+            "rows": preview_rows,
+            "total": row_count,
+            "has_more": has_more,
+            "download": csv_path,
+        }
+        download_map[sheet_name] = f"/hsh/eliminar/result/download?path={quote(csv_path)}"
+
+    if not datasets:
+        return base_payload
+
+    sheets = list(datasets.keys())
+    active_sheet = sheet if sheet in sheets else sheets[0]
+    active = datasets.get(active_sheet, {})
+
+    base_payload.update(
+        {
+            "sheets": sheets,
+            "active_sheet": active_sheet,
+            "columns": active.get("columns", []),
+            "rows": active.get("rows", []),
+            "total": active.get("total", 0),
+            "has_more": active.get("has_more", False),
+            "download_url": download_map.get(active_sheet),
+        }
+    )
+    return base_payload
+
+
 def eliminar_tags_pipeline(
     empresa: str,
     dominio: str,
@@ -1123,6 +1285,7 @@ def eliminar_tags_pipeline(
     lookup_statuses: dict[str, dict[str, str]] = {}
     group_matches: dict[str, dict[str, list[dict[str, Any]]]] = {}
     delete_keys_by_emp: dict[str, set[str]] = {}
+    report_excel_path: str | None = None
 
     def _handle_marker(line: str):
         line = (line or "").strip()
@@ -1440,6 +1603,7 @@ def eliminar_tags_pipeline(
         if verification_report_path:
             resumen.append(f"Reporte de verificación generado en {verification_report_path}")
             report_paths.append(verification_report_path)
+            report_excel_path = verification_report_path
     else:
         for emp in sorted({empresa, *(respaldo or "").split()}):
             if not emp:
@@ -1457,6 +1621,12 @@ def eliminar_tags_pipeline(
                 resumen.append(
                     f"{emp}: claves aún presentes en lookup_table ({len(still_keys)}): {', '.join(still_keys)}"
                 )
+        # En modo apply también generamos el reporte de verificación para verlo en UI
+        verification_report_path = _generate_verification_excel()
+        if verification_report_path:
+            resumen.append(f"Reporte de verificación generado en {verification_report_path}")
+            report_paths.append(verification_report_path)
+            report_excel_path = verification_report_path
 
     files: list[str] = sorted({*report_paths, *delete_files, *purge_files})
 
@@ -1473,6 +1643,9 @@ def eliminar_tags_pipeline(
         "files": files,
         "details": extra_messages,
     }
-    _store_result(final_status, payload["message"], files=files, extra={"details": extra_messages})
+    extra_payload: dict[str, Any] = {"details": extra_messages}
+    if report_excel_path:
+        extra_payload["report_path"] = report_excel_path
+    _store_result(final_status, payload["message"], files=files, extra=extra_payload)
     yield from _yield_summary(final_message, "success" if final_status == "SUCCESS" else "error")
     yield _result_line(payload)

@@ -182,26 +182,14 @@ def ejecutar_hsh_eliminar(
 
 
 @router.get("/hsh/eliminar/result")
-def obtener_hsh_eliminar_result():
-    data = hsh_controller.get_last_eliminar_result()
+def obtener_hsh_eliminar_result(
+    sheet: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    data = hsh_controller.load_eliminar_result_preview(sheet=sheet, limit=limit)
     if data is None:
         raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
-    # Para eliminar, no generamos una vista tabular específica; se muestran archivos y detalles.
-    payload = {
-        "status": data.status,
-        "message": data.message,
-        "files": data.files,
-        "details": data.extra.get("details", []) if isinstance(data.extra, dict) else [],
-        "sheets": [],
-        "active_sheet": None,
-        "columns": [],
-        "rows": [],
-        "total": 0,
-        "has_more": False,
-        "limit": 0,
-        "download_url": None,
-    }
-    return payload
+    return data
 
 
 @router.get("/hsh/eliminar/result/download")
