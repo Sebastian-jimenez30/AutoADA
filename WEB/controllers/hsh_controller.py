@@ -1063,8 +1063,13 @@ def eliminar_tags_pipeline(
     servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
     servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
 
-    if not servidor_principal or (aplicar and respaldo and not servidor_respaldo):
-        message = "No se pudieron resolver servidores principal o respaldo."
+    if not servidor_principal:
+        message = "No se pudo resolver el servidor principal para la empresa seleccionada."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+    if respaldo and aplicar and not servidor_respaldo:
+        message = "No se pudo resolver el servidor respaldo para la empresa seleccionada."
         _store_result("ERROR", message)
         yield _result_line({"status": "ERROR", "message": message})
         return
@@ -1248,17 +1253,27 @@ def eliminar_tags_pipeline(
 
     def _generate_verification_excel() -> str | None:
         """Genera un Excel de verificación en modo validar (sin aplicar cambios)."""
-        if not input_keys:
-            return None
-
         principal = empresa
         statuses = lookup_statuses.get(principal, {})
         groups_map = group_matches.get(principal, {})
         would_delete = lookup_would_delete.get(principal, [])
         would_bases = {k.split(".", 1)[0].strip() for k in would_delete if k}
 
+        # Armar el universo de claves a mostrar: prioridad input_keys, si no hay usar lo visto en lookup/groups
+        bases: dict[str, str] = {}
+        if input_keys:
+            bases.update(input_keys)
+        else:
+            for key in would_bases:
+                bases.setdefault(key, "")
+            for key in statuses.keys():
+                bases.setdefault(key, "")
+            for key in groups_map.keys():
+                bases.setdefault(key, "")
+
         rows: list[dict[str, str]] = []
-        for base_key, tag_val in sorted(input_keys.items()):
+        for base_key in sorted(bases.keys()):
+            tag_val = bases.get(base_key, "")
             status_txt = (statuses.get(base_key, "ABSENT") or "").upper()
             in_lookup = status_txt == "PRESENT" or base_key in would_bases
             in_groups = bool(groups_map.get(base_key))
@@ -1292,49 +1307,48 @@ def eliminar_tags_pipeline(
             extra_messages.append(f"[VERIFICAR] No se pudo generar el Excel de verificación: {exc}")
             return None
 
-    # Siempre sincronizamos dumps SCADA/HSH antes de eliminar cuando aplicar=True
-    if aplicar:
-        yield from _yield_summary("Sincronizando dumps SCADA/HSH para eliminación")
-        pre_commands: list[tuple[str, list[str]] | None] = [
-            (
-                "IMPORT-PRINCIPAL",
-                build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
-            ),
-            (
-                "IMPORT-RESPALDO",
-                build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
-            )
-            if respaldo and servidor_respaldo
-            else None,
-            ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
-            ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
-            (
-                "CONVERT-SCA-RESPALDO",
-                build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
-            )
-            if respaldo
-            else None,
-            (
-                "CONVERT-HSH-RESPALDO",
-                build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
-            )
-            if respaldo
-            else None,
-        ]
+    # Sincronización de dumps SCADA/HSH siempre (validar y aplicar)
+    yield from _yield_summary("Sincronizando dumps SCADA/HSH para eliminación")
+    pre_commands: list[tuple[str, list[str]] | None] = [
+        (
+            "IMPORT-PRINCIPAL",
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+        ),
+        (
+            "IMPORT-RESPALDO",
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+        (
+            "CONVERT-SCA-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        (
+            "CONVERT-HSH-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+    ]
 
-        for entry in pre_commands:
-            if not entry:
-                continue
-            label, cmd = entry
-            rc_pre = yield from _stream_script(label, cmd)
-            if rc_pre != 0:
-                target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
-                message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
-                yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
-                _store_result("ERROR", message)
-                yield _result_line({"status": "ERROR", "message": message})
-                return
-        yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_script(label, cmd)
+        if rc_pre != 0:
+            target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
+            message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+            yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
+            _store_result("ERROR", message)
+            yield _result_line({"status": "ERROR", "message": message})
+            return
+    yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
 
     # Ejecución principal del script de eliminación para principal y respaldo
     for target_empresa, target_respaldo, target_server in run_targets:
