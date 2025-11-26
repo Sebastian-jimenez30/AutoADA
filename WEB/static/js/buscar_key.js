@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const summaryStatus = document.getElementById("summaryStatus");
   const summaryLoader = document.getElementById("summaryLoader");
   const summaryEmpty = document.getElementById("summaryEmpty");
-  const paramsCard = document.getElementById("paramsCard");
+  const paramsCards = Array.from(document.querySelectorAll(".params-card"));
 
   const runUrl =
     form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
@@ -720,10 +720,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
+  const setParamsVisibility = () => {
+    if (!paramsCards.length) return;
+    paramsCards.forEach((card) => {
+      card.classList.remove("is-hidden");
+      card.style.maxHeight = "";
+    });
+  };
+
   const launchRun = async () => {
-    if (paramsCard) {
-      paramsCard.classList.add("is-hidden");
-    }
     activatePanel("summary");
     resetResultsView();
     setStatus("Ejecutando...");
@@ -742,9 +747,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await launchRun();
       ejecutarBtn && (ejecutarBtn.disabled = false);
       verificarBtn.disabled = false;
-      if (paramsCard) {
-        paramsCard.classList.remove("is-hidden");
-      }
+      setParamsVisibility(false);
     });
   }
 
@@ -759,9 +762,16 @@ document.addEventListener("DOMContentLoaded", () => {
       await launchRun();
       ejecutarBtn.disabled = false;
       if (verificarBtn) verificarBtn.disabled = false;
-      if (paramsCard) {
-        paramsCard.classList.remove("is-hidden");
-      }
+      setParamsVisibility(false);
+    });
+  }
+
+  // Fallback genérico: si el formulario se envía por submit (p.ej. Buscar Key con un solo botón)
+  if (form) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      await launchRun();
+      setParamsVisibility(false);
     });
   }
 });

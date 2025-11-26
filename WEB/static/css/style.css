@@ -636,18 +636,6 @@ a {
   display: none;
 }
 
-.params-card {
-  transition: opacity 0.3s ease, max-height 0.3s ease, margin 0.3s ease;
-  max-height: 2000px;
-}
-
-.params-card.is-hidden {
-  opacity: 0;
-  max-height: 0;
-  margin: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
 
   .nav-list {
     flex-direction: row;
