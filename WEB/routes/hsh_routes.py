@@ -62,8 +62,8 @@ def ejecutar_hsh_crear(
     def _pipeline():
         try:
             yield from hsh_controller.crear_tags_pipeline(
-                empresa=empresa,
-                dominio=dominio,
+                empresa="",
+                dominio="CC",
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
                 aplicar=aplicar_flag,
@@ -157,8 +157,8 @@ def ejecutar_hsh_eliminar(
     def _pipeline():
         try:
             yield from hsh_controller.eliminar_tags_pipeline(
-                empresa=empresa,
-                dominio=dominio,
+                empresa="",
+                dominio="CC",
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
                 aplicar=aplicar_flag,
