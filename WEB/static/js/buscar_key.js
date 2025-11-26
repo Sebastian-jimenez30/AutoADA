@@ -625,6 +625,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       confirmModal.classList.remove("is-visible");
+      confirmModal.hidden = true;
       confirmList.innerHTML = "";
       confirmList.innerHTML = "";
       if (Array.isArray(files) && files.length) {
@@ -639,8 +640,12 @@ document.addEventListener("DOMContentLoaded", () => {
         confirmList.appendChild(li);
       }
       confirmModal.classList.add("is-visible");
+      confirmModal.style.display = "flex";
+      confirmModal.hidden = false;
       const cleanup = (result) => {
         confirmModal.classList.remove("is-visible");
+        confirmModal.style.display = "none";
+        confirmModal.hidden = true;
         resolve(result);
       };
       confirmAccept.onclick = () => cleanup(true);
@@ -650,6 +655,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const hideConfirmModal = () => {
     if (confirmModal) {
       confirmModal.classList.remove("is-visible");
+      confirmModal.style.display = "none";
+      confirmModal.hidden = true;
     }
     if (confirmList) {
       confirmList.innerHTML = "";
