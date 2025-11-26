@@ -87,6 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let resultsLoading = false;
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
+  let runApply = false;
 
   const activatePanel = (target) => {
     tabs.forEach((tab) => {
@@ -783,7 +784,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const isApplyRun = !!(aplicarInput && aplicarInput.value);
+    const isApplyRun = runApply;
     const result = await handleStream(response, isApplyRun);
     if (result) {
       showResult(result.status, result.message);
@@ -865,6 +866,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (aplicarInput) {
         aplicarInput.value = "";
       }
+      runApply = false;
       ejecutarBtn && (ejecutarBtn.disabled = true);
       verificarBtn.disabled = true;
       await launchRun();
@@ -880,6 +882,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (aplicarInput) {
         aplicarInput.value = "1";
       }
+      runApply = true;
       ejecutarBtn.disabled = true;
       if (verificarBtn) verificarBtn.disabled = true;
       await launchRun();
@@ -906,6 +909,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (form) {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
+      runApply = !!(aplicarInput && aplicarInput.value);
       await launchRun();
       setParamsVisibility(false);
     });

@@ -1361,6 +1361,82 @@ def cambiar_key_pipeline(
             return
     yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
 
+    def _handle_marker_local(raw: str):
+        line = (raw or "").strip()
+        if not line:
+            return None
+        if line.startswith("REPORT_PATH:"):
+            report_paths.append(line.split(":", 1)[1].strip())
+        elif line.startswith("INFO_PATH:"):
+            info_paths.append(line.split(":", 1)[1].strip())
+        elif line.startswith("DELETE_FILE:"):
+            if aplicar:
+                delete_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("PURGE_FILE:"):
+            if aplicar:
+                purge_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("PI_TAG:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                try:
+                    emp_part, tag_part = detalle.split("|", 1)
+                    emp_key = emp_part.strip().upper()
+                    tag_val = tag_part.strip()
+                    if tag_val:
+                        pi_tags_map.setdefault(emp_key, set()).add(tag_val)
+                except Exception:
+                    pass
+        elif line.startswith("PI_REPORT:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                pi_reports.append(detalle)
+        elif line.startswith("PI_MISSING:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                pi_missing.append(detalle)
+        elif line.startswith("SCADA_DISABLE:"):
+            detalle = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in detalle.split("|")]
+            if len(parts) >= 4:
+                emp_sc, dom_sc, base, bit_spec = parts[:4]
+                emp_u = emp_sc.upper()
+                try:
+                    bit = int(bit_spec.split(":")[-1])
+                except Exception:
+                    bit = 1
+                suffix = "ESTIMATED" if bit == 2 else "VALUE"
+                scada_disable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+        elif line.startswith("SCADA_ENABLE:"):
+            detalle = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in detalle.split("|")]
+            if len(parts) >= 4:
+                emp_sc, dom_sc, base, bit_spec = parts[:4]
+                emp_u = emp_sc.upper()
+                try:
+                    bit = int(bit_spec.split(":")[-1])
+                except Exception:
+                    bit = 1
+                suffix = "ESTIMATED" if bit == 2 else "VALUE"
+                scada_enable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+        elif line.startswith("SUMMARY::"):
+            try:
+                payload = line.split("SUMMARY::", 1)[1]
+                if "|" in payload:
+                    msg, var = payload.rsplit("|", 1)
+                    msg_clean = msg.strip()
+                    var_clean = var.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        return [f"SUMMARY::{msg_clean}|{var_clean}\n"]
+                else:
+                    msg_clean = payload.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        return [f"SUMMARY::{msg_clean}|info\n"]
+            except Exception:
+                return None
+        return None
+
     # Helper para ejecutar el script y recolectar marcadores
     def _run_script(label: str, extra_flags: list[str] | None = None):
         nonlocal scada_disable_map, scada_enable_map, pi_tags_map, pi_reports, pi_missing, report_paths, info_paths, delete_files, purge_files
@@ -1378,7 +1454,7 @@ def cambiar_key_pipeline(
                 if "[" in raw and "]" in raw:
                     raw = raw.split("]", 1)[1]
                 marker_line = raw.strip()
-                yielded = _handle_marker(marker_line)
+                yielded = _handle_marker_local(marker_line)
                 if yielded:
                     for item in yielded:
                         yield item
@@ -1399,16 +1475,15 @@ def cambiar_key_pipeline(
         yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
         return
 
-    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
-    # Fallback: si no hay reporte, busca el último Excel
-    if not report_paths:
-        fallback_report = _find_latest_cambiar_report()
-        if fallback_report:
-            report_paths.append(fallback_report)
-            files_collected = sorted({*files_collected, fallback_report})
-
     # Si es solo validar, terminamos aquí con los reportes y tags
     if not aplicar:
+        files_collected = sorted({*report_paths, *info_paths})
+        # Fallback: si no hay reporte, busca el último Excel
+        if not report_paths:
+            fallback_report = _find_latest_cambiar_report()
+            if fallback_report:
+                report_paths.append(fallback_report)
+                files_collected = sorted({*files_collected, fallback_report})
         status_msg = "Validación completada."
         yield from _yield_summary(f"{empresa}: {status_msg}", "success")
         extra = {
@@ -1428,6 +1503,14 @@ def cambiar_key_pipeline(
         _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
         yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
         return
+
+    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
+    # Fallback: si no hay reporte, busca el último Excel
+    if not report_paths:
+        fallback_report = _find_latest_cambiar_report()
+        if fallback_report:
+            report_paths.append(fallback_report)
+            files_collected = sorted({*files_collected, fallback_report})
 
     # 2) Apagar SCADA antes de aplicar cambios en bases de datos
     if scada_disable_map:
@@ -1465,9 +1548,11 @@ def cambiar_key_pipeline(
         elif line.startswith("INFO_PATH:"):
             info_paths.append(line.split(":", 1)[1].strip())
         elif line.startswith("DELETE_FILE:"):
-            delete_files.append(line.split(":", 1)[1].strip())
+            if aplicar:
+                delete_files.append(line.split(":", 1)[1].strip())
         elif line.startswith("PURGE_FILE:"):
-            purge_files.append(line.split(":", 1)[1].strip())
+            if aplicar:
+                purge_files.append(line.split(":", 1)[1].strip())
         elif line.startswith("PI_TAG:"):
             detalle = line.split(":", 1)[1].strip()
             if detalle:
