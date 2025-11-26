@@ -1361,16 +1361,94 @@ def cambiar_key_pipeline(
             return
     yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
 
-    # Ejecutar script principal (una vez, indicando respaldo)
-    cmd = build_cmd("scripts.hsh_cambiar_key", empresa, "--input", archivo_path)
-    if respaldo:
-        cmd += ["--respaldo", respaldo]
-    if aplicar:
-        cmd.append("--apply")
-        cmd += ["--server", servidor_principal]
-        if respaldo and servidor_respaldo:
-            cmd += ["--server-respaldo", servidor_respaldo]
+    # Helper para ejecutar el script y recolectar marcadores
+    def _run_script(label: str, extra_flags: list[str] | None = None):
+        nonlocal scada_disable_map, scada_enable_map, pi_tags_map, pi_reports, pi_missing, report_paths, info_paths, delete_files, purge_files
+        cmd = build_cmd("scripts.hsh_cambiar_key", empresa, "--input", archivo_path)
+        if respaldo:
+            cmd += ["--respaldo", respaldo]
+        if extra_flags:
+            cmd += extra_flags
+        rc_script: int | None = None
+        stream_script = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        try:
+            while True:
+                chunk = next(stream_script)
+                raw = chunk
+                if "[" in raw and "]" in raw:
+                    raw = raw.split("]", 1)[1]
+                marker_line = raw.strip()
+                if marker_line.startswith("SUMMARY::"):
+                    yielded = _handle_marker(marker_line)
+                    if yielded:
+                        for item in yielded:
+                            yield item
+                else:
+                    _handle_marker(marker_line)
+                yield chunk
+        except StopIteration as stop:
+            rc_script = stop.value if isinstance(stop.value, int) else 0
+        return rc_script if rc_script is not None else 0
 
+    # 1) Dry-run / validación (check-only) para derivar SCADA/PI y reportes
+    yield "Ejecutando verificación inicial de cambio de key...\n"
+    flags_check = ["--check-only"]
+    rc_check = yield from _run_script("CAMBIAR-KEY-CHECK", flags_check)
+    if rc_check != 0:
+        message = f"Verificación inicial falló (rc={rc_check})."
+        files_collected = sorted({*report_paths, *info_paths})
+        yield from _yield_summary(f"{empresa}: verificación inicial falló", "error")
+        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+        return
+
+    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
+    # Fallback: si no hay reporte, busca el último Excel
+    if not report_paths:
+        fallback_report = _find_latest_cambiar_report()
+        if fallback_report:
+            report_paths.append(fallback_report)
+            files_collected = sorted({*files_collected, fallback_report})
+
+    # Si es solo validar, terminamos aquí con los reportes y tags
+    if not aplicar:
+        status_msg = "Validación completada."
+        yield from _yield_summary(f"{empresa}: {status_msg}", "success")
+        extra = {
+            "details": extra_messages,
+            "report_path": report_paths[0] if report_paths else None,
+            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+            "pi_reports": pi_reports,
+            "pi_missing": pi_missing,
+            "scada_on": scada_enable_map,
+            "scada_off": scada_disable_map,
+        }
+        last_cambiar_state = {
+            "empresa": empresa,
+            "respaldo": respaldo,
+            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+        }
+        _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
+        yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
+        return
+
+    # 2) Apagar SCADA antes de aplicar cambios en bases de datos
+    if scada_disable_map:
+        yield from _yield_summary("Apagando bits de keys actuales...", "warning")
+        msgs_off, fail_off = apply_scada_updates(
+            inserted_keys_map=scada_disable_map,
+            env=env,
+            autoada_dir=AUTOADA_DIR,
+            enable=False,
+            log_filename="scada_cambiar_key_off.log",
+        )
+        for msg in msgs_off:
+            yield f"[SCADA-OFF] {msg}\n"
+        if fail_off:
+            message = "Apagado SCADA con errores. Revisa consola."
+            _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+            yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+            return
     report_paths: list[str] = []
     info_paths: list[str] = []
     delete_files: list[str] = []
@@ -1455,26 +1533,12 @@ def cambiar_key_pipeline(
                 return
 
     yield f"Ejecutando script de cambio de key ({empresa})...\n"
-    rc_script: int | None = None
-    stream_script = _run_subprocess_stream(cmd, "CAMBIAR-KEY", env=env, cwd=AUTOADA_DIR)
-    try:
-        while True:
-            chunk = next(stream_script)
-            raw = chunk
-            if "[" in raw and "]" in raw:
-                raw = raw.split("]", 1)[1]
-            marker_line = raw.strip()
-            # Emitir summaries si aplica
-            if marker_line.startswith("SUMMARY::"):
-                yielded = _handle_marker(marker_line)
-                if yielded:
-                    for item in yielded:
-                        yield item
-            else:
-                _handle_marker(marker_line)
-            yield chunk
-    except StopIteration as stop:
-        rc_script = stop.value if isinstance(stop.value, int) else 0
+    # 3) Ejecutar el script en modo aplicar (Mongo/lookup + delete/purge)
+    yield "Aplicando cambio de key (Mongo/HSH)...\n"
+    flags_apply = ["--apply", "--server", servidor_principal]
+    if respaldo and servidor_respaldo:
+        flags_apply += ["--server-respaldo", servidor_respaldo]
+    rc_script = yield from _run_script("CAMBIAR-KEY-APPLY", flags_apply)
 
     files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
 
@@ -1484,6 +1548,13 @@ def cambiar_key_pipeline(
         _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
         yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
         return
+
+    # Fallback: si no tenemos reporte, intenta localizar el último Excel en out/cambiar_key
+    if not report_paths:
+        fallback_report = _find_latest_cambiar_report()
+        if fallback_report:
+            report_paths.append(fallback_report)
+            files_collected = sorted({*files_collected, fallback_report})
 
     # Si es aplicar y se generaron archivos delete/purge, pasamos a estado pendiente de confirmación
     if aplicar and (delete_files or purge_files):
@@ -1567,6 +1638,20 @@ def cleanup_cambiar_file():
             os.remove(path)
         except Exception:
             pass
+
+
+def _find_latest_cambiar_report() -> str | None:
+    base_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
+    if not base_dir.exists():
+        return None
+    candidates = sorted(base_dir.rglob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in candidates:
+        try:
+            if path.is_file():
+                return str(path)
+        except Exception:
+            continue
+    return None
 
 def load_cambiar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
     result = last_cambiar_result
