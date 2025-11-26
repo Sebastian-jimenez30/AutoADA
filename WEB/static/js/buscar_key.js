@@ -727,15 +727,6 @@ document.addEventListener("DOMContentLoaded", () => {
     await ejecutarBusqueda();
   };
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    ejecutarBtn.disabled = true;
-    if (verificarBtn) verificarBtn.disabled = true;
-    await launchRun();
-    ejecutarBtn.disabled = false;
-    if (verificarBtn) verificarBtn.disabled = false;
-  });
-
   if (verificarBtn) {
     verificarBtn.addEventListener("click", async () => {
       if (aplicarInput) {
@@ -750,10 +741,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (ejecutarBtn) {
-    ejecutarBtn.addEventListener("click", () => {
+    ejecutarBtn.addEventListener("click", async () => {
       if (aplicarInput) {
         aplicarInput.value = "1";
       }
+      ejecutarBtn.disabled = true;
+      if (verificarBtn) verificarBtn.disabled = true;
+      await launchRun();
+      ejecutarBtn.disabled = false;
+      if (verificarBtn) verificarBtn.disabled = false;
     });
   }
 });
