@@ -1378,13 +1378,10 @@ def cambiar_key_pipeline(
                 if "[" in raw and "]" in raw:
                     raw = raw.split("]", 1)[1]
                 marker_line = raw.strip()
-                if marker_line.startswith("SUMMARY::"):
-                    yielded = _handle_marker(marker_line)
-                    if yielded:
-                        for item in yielded:
-                            yield item
-                else:
-                    _handle_marker(marker_line)
+                yielded = _handle_marker(marker_line)
+                if yielded:
+                    for item in yielded:
+                        yield item
                 yield chunk
         except StopIteration as stop:
             rc_script = stop.value if isinstance(stop.value, int) else 0

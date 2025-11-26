@@ -667,8 +667,10 @@ document.addEventListener("DOMContentLoaded", () => {
           continue;
         }
         if (trimmed.startsWith("CONFIRM_DELETE::")) {
-          confirmPending = true;
-          appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
+          if (allowConfirm) {
+            confirmPending = true;
+            appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
+          }
           continue;
         }
         if (trimmed.startsWith("RESULT::")) {
@@ -714,8 +716,10 @@ document.addEventListener("DOMContentLoaded", () => {
       } else if (leftover.trim().startsWith("SUMMARY::")) {
         handleSummaryPayload(leftover.trim().substring("SUMMARY::".length));
       } else if (leftover.trim().startsWith("CONFIRM_DELETE::")) {
-        confirmPending = true;
-        appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
+        if (allowConfirm) {
+          confirmPending = true;
+          appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
+        }
       } else {
         appendLog(`${leftover}\n`);
       }
@@ -779,7 +783,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const result = await handleStream(response);
+    const isApplyRun = !!(aplicarInput && aplicarInput.value);
+    const result = await handleStream(response, isApplyRun);
     if (result) {
       showResult(result.status, result.message);
       setStatus(result.status === "SUCCESS" ? "Completado" : "Error", result.status);
