@@ -442,7 +442,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : ` de más de ${rows.length} registros (vista previa).`
           : ` registro${plural}.`;
         const prefix = `Mostrando ${rows.length}`;
-        const sheetLabel = activeSheet ? Hoja:  -  : ;
+        const sheetLabel = activeSheet ? `Hoja: ${activeSheet} - ` : "";
         resultMeta.textContent = `${sheetLabel}${prefix}${suffix}`;
       } else if (message) {
         resultMeta.textContent = message;
@@ -728,20 +728,22 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   if (verificarBtn) {
-    verificarBtn.addEventListener("click", async () => {
+    verificarBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
       if (aplicarInput) {
         aplicarInput.value = "";
       }
-      ejecutarBtn.disabled = true;
+      ejecutarBtn && (ejecutarBtn.disabled = true);
       verificarBtn.disabled = true;
       await launchRun();
-      ejecutarBtn.disabled = false;
+      ejecutarBtn && (ejecutarBtn.disabled = false);
       verificarBtn.disabled = false;
     });
   }
 
   if (ejecutarBtn) {
-    ejecutarBtn.addEventListener("click", async () => {
+    ejecutarBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
       if (aplicarInput) {
         aplicarInput.value = "1";
       }
