@@ -26,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const summaryStatus = document.getElementById("summaryStatus");
   const summaryLoader = document.getElementById("summaryLoader");
   const summaryEmpty = document.getElementById("summaryEmpty");
+  const paramsCard = document.getElementById("paramsCard");
 
   const runUrl =
     form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
@@ -720,6 +721,9 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const launchRun = async () => {
+    if (paramsCard) {
+      paramsCard.classList.add("is-hidden");
+    }
     activatePanel("summary");
     resetResultsView();
     setStatus("Ejecutando...");
@@ -738,6 +742,9 @@ document.addEventListener("DOMContentLoaded", () => {
       await launchRun();
       ejecutarBtn && (ejecutarBtn.disabled = false);
       verificarBtn.disabled = false;
+      if (paramsCard) {
+        paramsCard.classList.remove("is-hidden");
+      }
     });
   }
 
@@ -752,6 +759,9 @@ document.addEventListener("DOMContentLoaded", () => {
       await launchRun();
       ejecutarBtn.disabled = false;
       if (verificarBtn) verificarBtn.disabled = false;
+      if (paramsCard) {
+        paramsCard.classList.remove("is-hidden");
+      }
     });
   }
 });
