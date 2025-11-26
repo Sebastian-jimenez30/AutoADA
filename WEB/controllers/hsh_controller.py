@@ -1496,7 +1496,7 @@ def cambiar_key_pipeline(
                 report_paths.append(fallback_report)
                 files_collected = sorted({*files_collected, fallback_report})
             else:
-                # Generar un Excel de verificación con formato: Key actual / Key nueva y estados
+                # Generar un Excel de verificación con formato tabla: Key actual / Key nueva y estados
                 try:
                     out_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
                     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1506,17 +1506,15 @@ def cambiar_key_pipeline(
                     ws = wb.active
                     ws.title = "Verificacion"
 
-                    # Construir pares usando mapas SCADA si existen; de lo contrario, usar mensajes
                     keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
                     keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
-                    pairs = []
+                    pairs: list[tuple[str, str]] = []
                     for idx in range(max(len(keys_old), len(keys_new))):
                         old_key = keys_old[idx] if idx < len(keys_old) else ""
                         new_key = keys_new[idx] if idx < len(keys_new) else ""
                         pairs.append((old_key, new_key))
 
                     if not pairs:
-                        # Si no hay pares, crear una fila básica con mensaje
                         ws.append(["detalle"])
                         for msg in (extra_messages or ["Validación completada."]):
                             ws.append([msg])
@@ -1530,27 +1528,27 @@ def cambiar_key_pipeline(
                             row_cursor += 1
 
                             ws.cell(row=row_cursor, column=1, value="Scada")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
                             ws.cell(row=row_cursor, column=3, value="Scada")
-                            ws.cell(row=row_cursor, column=4, value="existe" if new_key else "")
+                            ws.cell(row=row_cursor, column=4, value="existe" if new_key else "no existe")
                             row_cursor += 1
 
                             ws.cell(row=row_cursor, column=1, value="LookupTable")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
                             ws.cell(row=row_cursor, column=3, value="LookupTable")
                             ws.cell(row=row_cursor, column=4, value="no existe")
                             row_cursor += 1
 
                             ws.cell(row=row_cursor, column=1, value="Groups")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
                             ws.cell(row=row_cursor, column=3, value="Groups")
                             ws.cell(row=row_cursor, column=4, value="no existe")
                             row_cursor += 1
 
                             ws.cell(row=row_cursor, column=1, value="Bit")
-                            ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "")
+                            ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "apagado")
                             ws.cell(row=row_cursor, column=3, value="Bit")
-                            ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "")
+                            ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "prendido")
                             row_cursor += 2  # espacio entre bloques
 
                     wb.save(report_path)
