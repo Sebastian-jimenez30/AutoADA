@@ -360,10 +360,11 @@ document.addEventListener("DOMContentLoaded", () => {
     updateSheetTabs(availableSheets, activeSheet);
     refreshSheetTabsActiveState();
 
-    const columns = Array.isArray(data?.columns) ? data.columns : [];
-    const rows = Array.isArray(data?.rows) ? data.rows : [];
-    const total = typeof data?.total === "number" ? data.total : rows.length;
-    const hasMore = Boolean(data?.has_more);
+    const isRaw = typeof data?.raw_text === "string";
+    const columns = !isRaw && Array.isArray(data?.columns) ? data.columns : [];
+    const rows = !isRaw && Array.isArray(data?.rows) ? data.rows : [];
+    const total = !isRaw && typeof data?.total === "number" ? data.total : rows.length;
+    const hasMore = !isRaw && Boolean(data?.has_more);
     const files = Array.isArray(data?.files) ? data.files : [];
     const details = data?.details || (data?.extra && data.extra.details);
     const message = data?.message;
@@ -374,7 +375,20 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const hasTabularData = columns.length > 0 && rows.length > 0;
 
-    if (!hasTabularData) {
+    if (isRaw) {
+      resultPanel.classList.remove("is-empty");
+      const pre = document.createElement("pre");
+      pre.className = "result-raw-text";
+      pre.textContent = data.raw_text || "";
+      resultBody.innerHTML = "";
+      resultHead.innerHTML = "";
+      const wrapperRow = document.createElement("tr");
+      const wrapperCell = document.createElement("td");
+      wrapperCell.colSpan = 1;
+      wrapperCell.appendChild(pre);
+      wrapperRow.appendChild(wrapperCell);
+      resultBody.appendChild(wrapperRow);
+    } else if (!hasTabularData) {
       resultPanel.classList.add("is-empty");
       if (resultEmpty) {
         if (files.length) {
@@ -413,7 +427,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (resultMeta) {
-      if (hasTabularData) {
+      if (isRaw) {
+        const sheetLabel = activeSheet ? `Hoja: ${activeSheet} - ` : "";
+        resultMeta.textContent = `${sheetLabel}Vista previa texto plano (CSV)`;
+      } else if (hasTabularData) {
         const plural = rows.length === 1 ? "" : "s";
         const suffix = hasMore
           ? total > rows.length
@@ -421,7 +438,7 @@ document.addEventListener("DOMContentLoaded", () => {
             : ` de más de ${rows.length} registros (vista previa).`
           : ` registro${plural}.`;
         const prefix = `Mostrando ${rows.length}`;
-        const sheetLabel = activeSheet ? `Hoja: ${activeSheet} — ` : "";
+        const sheetLabel = activeSheet ? Hoja:  -  : ;
         resultMeta.textContent = `${sheetLabel}${prefix}${suffix}`;
       } else if (message) {
         resultMeta.textContent = message;

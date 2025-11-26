@@ -1101,38 +1101,18 @@ def load_eliminar_result_preview(sheet: str | None = None, limit: int = 500) -> 
             finally:
                 workbook.close()
 
-    # Cargar CSV como hojas virtuales
-    import csv as _csv
-
+    # Cargar CSV como hojas virtuales (texto plano)
     for csv_path in csv_files:
         try:
-            with open(csv_path, "r", encoding="utf-8", errors="ignore", newline="") as fh:
-                reader = _csv.reader(fh)
-                rows_list = list(reader)
+            with open(csv_path, "r", encoding="utf-8", errors="ignore") as fh:
+                content = fh.read()
         except Exception:
             continue
-        if not rows_list:
+        if content is None:
             continue
-        headers = [f"Columna {i+1}" for i in range(len(rows_list[0]))]
-        preview_rows: list[dict[str, Any]] = []
-        row_count = 0
-        has_more = False
-        for row in rows_list:
-            row_count += 1
-            row_dict = {}
-            for idx, header in enumerate(headers):
-                row_dict[header] = row[idx] if idx < len(row) else None
-            if row_count <= limit:
-                preview_rows.append(row_dict)
-            else:
-                has_more = True
-                break
         sheet_name = os.path.splitext(os.path.basename(csv_path))[0]
         datasets[sheet_name] = {
-            "columns": headers,
-            "rows": preview_rows,
-            "total": row_count,
-            "has_more": has_more,
+            "raw_text": content,
             "download": csv_path,
         }
         download_map[sheet_name] = f"/hsh/eliminar/result/download?path={quote(csv_path)}"
