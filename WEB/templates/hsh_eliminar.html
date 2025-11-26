@@ -55,30 +55,9 @@
       data-result-url="/hsh/eliminar/result"
       data-file-download="/hsh/eliminar/result/download"
     >
+      <input type="hidden" id="aplicar" name="aplicar" value="">
       <div class="form-layout">
         <div class="form-left">
-          <div class="form-row-top">
-            <div class="form-field">
-              <label for="empresa">Empresa</label>
-              <select id="empresa" name="empresa" required>
-                <option value="" disabled selected>Selecciona la empresa</option>
-                {% for empresa in empresas %}
-                  <option value="{{ empresa }}">{{ empresa }}</option>
-                {% endfor %}
-              </select>
-            </div>
-
-            <div class="form-field">
-              <label for="dominio">Dominio</label>
-              <select id="dominio" name="dominio" required>
-                <option value="CC" selected>CC</option>
-                {% for dominio in dominios %}
-                  <option value="{{ dominio }}">{{ dominio }}</option>
-                {% endfor %}
-              </select>
-            </div>
-          </div>
-
           <div class="form-field form-field--full">
             <label for="archivo">Archivo Excel con claves SCADA a eliminar</label>
             <input
@@ -90,25 +69,17 @@
             >
           </div>
 
-          <div class="form-field checkbox-field">
-            <label>
-              <input type="checkbox" id="aplicar" name="aplicar" value="1">
-              Eliminar en HSH (modo apply)
-            </label>
-          </div>
-
           <p class="form-help-text">
-            <strong>Nota:</strong> en modo apply se ejecutan eliminaciones en HSH y acciones SCADA remotas.
-            Revisa los resultados antes de repetir la operación.
+            <strong>Nota:</strong> el proceso se ejecutará para empresa principal y respaldo detectadas en este equipo. Usa <strong>Verificar</strong> para sólo validar; <strong>Ejecutar</strong> aplica cambios (delete/purge, SCADA, etc.).
           </p>
         </div>
 
         <div class="form-right">
+          <button type="button" class="btn btn-secondary" id="verificarBtn">
+            Verificar
+          </button>
           <button type="submit" class="btn btn-primary" id="buscarKeyBtn">
             Ejecutar
-          </button>
-          <button type="button" class="btn btn-secondary" id="limpiarLogBtn">
-            Limpiar consola
           </button>
         </div>
       </div>
@@ -180,4 +151,3 @@
 </script>
 
 {% endblock %}
-

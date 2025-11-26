@@ -23,8 +23,6 @@ def hsh_crear_page(request: Request):
         "active_page": "hsh_crear_tag",
         "page_title": "HSH - Crear Tag",
         "page_subtitle": "Valida e inserta nuevos tags HSH a partir de un archivo Excel.",
-        "empresas": list(hsh_controller.get_empresas()),
-        "dominios": list(hsh_controller.get_dominios()),
     }
     return templates.TemplateResponse("hsh_crear.html", context)
 
@@ -32,10 +30,7 @@ def hsh_crear_page(request: Request):
 @router.post("/hsh/crear/run")
 def ejecutar_hsh_crear(
     request: Request,
-    empresa: str = Form(...),
-    dominio: str = Form(...),
     aplicar: str | None = Form(None),
-    actualizar: str | None = Form(None),
     archivo: UploadFile = File(...),
 ):
     if not archivo or not archivo.filename:
@@ -123,8 +118,6 @@ def hsh_eliminar_page(request: Request):
         "active_page": "hsh_eliminar_tag",
         "page_title": "HSH - Eliminar Tag",
         "page_subtitle": "Valida y elimina tags HSH existentes a partir de un archivo Excel.",
-        "empresas": list(hsh_controller.get_empresas()),
-        "dominios": list(hsh_controller.get_dominios()),
     }
     return templates.TemplateResponse("hsh_eliminar.html", context)
 
@@ -132,8 +125,6 @@ def hsh_eliminar_page(request: Request):
 @router.post("/hsh/eliminar/run")
 def ejecutar_hsh_eliminar(
     request: Request,
-    empresa: str = Form(...),
-    dominio: str = Form(...),
     aplicar: str | None = Form(None),
     archivo: UploadFile = File(...),
 ):

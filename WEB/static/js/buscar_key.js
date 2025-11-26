@@ -4,7 +4,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const logOutput = document.getElementById("logOutput");
   const ejecutarBtn = document.getElementById("buscarKeyBtn");
-  const limpiarBtn = document.getElementById("limpiarLogBtn");
+  const verificarBtn = document.getElementById("verificarBtn");
+  const aplicarInput = document.getElementById("aplicar");
   const statusBadge = document.getElementById("logStatus");
   const resultBox = document.getElementById("resultMessage");
 
@@ -718,25 +719,41 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    ejecutarBtn.disabled = true;
+  const launchRun = async () => {
     activatePanel("summary");
     resetResultsView();
     setStatus("Ejecutando...");
     startSummaryRun();
     await ejecutarBusqueda();
+  };
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    ejecutarBtn.disabled = true;
+    if (verificarBtn) verificarBtn.disabled = true;
+    await launchRun();
     ejecutarBtn.disabled = false;
+    if (verificarBtn) verificarBtn.disabled = false;
   });
 
-  if (limpiarBtn) {
-    limpiarBtn.addEventListener("click", () => {
-      if (logOutput) {
-        logOutput.textContent = "";
+  if (verificarBtn) {
+    verificarBtn.addEventListener("click", async () => {
+      if (aplicarInput) {
+        aplicarInput.value = "";
       }
-      setStatus("En espera");
-      resetResult();
-      resetSummaryView();
+      ejecutarBtn.disabled = true;
+      verificarBtn.disabled = true;
+      await launchRun();
+      ejecutarBtn.disabled = false;
+      verificarBtn.disabled = false;
+    });
+  }
+
+  if (ejecutarBtn) {
+    ejecutarBtn.addEventListener("click", () => {
+      if (aplicarInput) {
+        aplicarInput.value = "1";
+      }
     });
   }
 });

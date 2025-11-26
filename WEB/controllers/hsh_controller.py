@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import socket
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -94,6 +95,31 @@ def get_dominios() -> Iterable[str]:
     return SERVER_RESOLVER.opciones_dominio_view().keys()
 
 
+def detect_empresas_por_host() -> tuple[str, str]:
+    """
+    Intenta inferir la empresa principal y respaldo a partir del hostname local.
+    Si no puede, retorna por defecto ITCO/TRA.
+    """
+    host = socket.gethostname().lower()
+    override = os.environ.get("AUTOADA_EMPRESA")
+    if override:
+        ov = override.strip().upper()
+        if ov in RESPALDO_MAP:
+            return ov, RESPALDO_MAP[ov]
+
+    if host.startswith("itco") or "itco" in host:
+        return "ITCO", "TRA"
+    if host.startswith("tra") or "tra" in host:
+        return "TRA", "ITCO"
+    if host.startswith("rep2") or "repp" in host:
+        return "REPP", "REPS"
+    if host.startswith("rep1") or "reps" in host:
+        return "REPS", "REPP"
+
+    # Fallback seguro
+    return "ITCO", "TRA"
+
+
 def _run_subprocess_stream(
     cmd: list[str],
     label: str,
@@ -143,8 +169,10 @@ def crear_tags_pipeline(
 ) -> Generator[str, None, None]:
     global last_crear_result
 
-    empresa = (empresa or "").strip().upper()
-    dominio = (dominio or "").strip().upper() or "CC"
+    empresa_detected, respaldo_detected = detect_empresas_por_host()
+    empresa = empresa_detected
+    respaldo = respaldo_detected
+    dominio = "CC"
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
 
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -199,15 +227,14 @@ def crear_tags_pipeline(
         yield _result_line({"status": "ERROR", "message": message})
         return
 
-    respaldo = RESPALDO_MAP.get(empresa)
     servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
+    servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
+
     if not servidor_principal:
         message = "No se pudo resolver el servidor principal para la empresa seleccionada."
         _store_result("ERROR", message)
         yield _result_line({"status": "ERROR", "message": message})
         return
-
-    servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
 
     run_targets: list[tuple[str, Optional[str], str]] = [(empresa, respaldo, servidor_principal)]
     if aplicar and respaldo and servidor_respaldo:
@@ -1147,8 +1174,11 @@ def eliminar_tags_pipeline(
 ) -> Generator[str, None, None]:
     global last_eliminar_result
 
-    empresa = (empresa or "").strip().upper()
-    dominio = (dominio or "").strip().upper() or "CC"
+    # Detectar empresa/respaldo automáticamente (ignora entradas del formulario)
+    empresa_detected, respaldo_detected = detect_empresas_por_host()
+    empresa = empresa_detected
+    respaldo = respaldo_detected
+    dominio = "CC"
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
 
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -1201,7 +1231,6 @@ def eliminar_tags_pipeline(
         yield _result_line({"status": "ERROR", "message": message})
         return
 
-    respaldo = RESPALDO_MAP.get(empresa)
     servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
     servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
 
