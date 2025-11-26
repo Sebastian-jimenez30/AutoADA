@@ -377,11 +377,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (isRaw) {
       resultPanel.classList.remove("is-empty");
+      if (resultEmpty) {
+        resultEmpty.textContent = "";
+      }
+      resultHead.innerHTML = "";
+      resultBody.innerHTML = "";
       const pre = document.createElement("pre");
       pre.className = "result-raw-text";
       pre.textContent = data.raw_text || "";
-      resultBody.innerHTML = "";
-      resultHead.innerHTML = "";
       const wrapperRow = document.createElement("tr");
       const wrapperCell = document.createElement("td");
       wrapperCell.colSpan = 1;
