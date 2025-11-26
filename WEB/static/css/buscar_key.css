@@ -321,3 +321,40 @@
   from { opacity: 0; transform: translateY(-10px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.confirm-modal.is-visible {
+  display: flex;
+}
+
+.confirm-modal__dialog {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.confirm-modal__list {
+  margin: 12px 0 16px;
+  padding-left: 18px;
+  max-height: 200px;
+  overflow-y: auto;
+  color: #123;
+}
+
+.confirm-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

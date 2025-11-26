@@ -8,13 +8,14 @@ from tkinter import messagebox
 
 from utils.cli import build_cmd
 from utils.data_checks import find_mode_data_ready
-from ui.components.success_dialog import show_success_with_open
+from ui.components.success_dialog import show_success_with_open, show_summary_dialog
 
 __all__ = [
     "messagebox",
     "build_cmd",
     "find_mode_data_ready",
     "show_success_with_open",
+    "show_summary_dialog",
     "_runtime_root",
     "_validar_keys",
 ]
@@ -39,4 +40,3 @@ def _validar_keys(cadena: str) -> Tuple[List[str], List[str]]:
         else:
             invalidas.append(key)
     return validas, invalidas
-

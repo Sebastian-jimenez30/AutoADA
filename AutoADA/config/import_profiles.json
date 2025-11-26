@@ -30,7 +30,7 @@
     "buscar_key": {
       "scada": {
         "enabled": true,
-        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/db_sca_1.sh",
         "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
         "files": "ALL"
       },
@@ -44,7 +44,7 @@
     "buscar_keys": {
       "scada": {
         "enabled": true,
-        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/hsh_validar.sh",
+        "remote_cmd": ". /home/ada/.bash_profile ; /opt/osi/osi_cust/data/pythondir/scripts/db_sca_1.sh",
         "from_path": "/opt/osi/osi_cust/data/pythondir/dbdump",
         "files": "ALL"
       },

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
+{% import "components/summary_panel.html" as summary_components %}
+
+{% block content %}
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+    <div class="buscarkey-header__title">
+      <h2>Cambiar Key HSH</h2>
+    </div>
+  </header>
+
+  <section class="buscarkey-form card params-card" id="paramsCard">
+    <h3>Parámetros de ejecución</h3>
+    <form
+      id="buscarKeyForm"
+      method="post"
+      action="/hsh/cambiar/run"
+      enctype="multipart/form-data"
+      data-run-url="/hsh/cambiar/run"
+      data-result-url="/hsh/cambiar/result"
+      data-file-download="/hsh/cambiar/result/download"
+      data-pi-url="/hsh/cambiar/pi"
+      data-confirm-url="/hsh/cambiar/confirm"
+    >
+      <input type="hidden" id="aplicar" name="aplicar" value="">
+      <div class="form-layout">
+        <div class="form-left">
+          <div class="form-field form-field--full">
+            <label for="archivo">Archivo Excel (cambio de keys)</label>
+            <input
+              type="file"
+              id="archivo"
+              name="archivo"
+              accept=".xlsx,.xlsm,.xls"
+              required
+            >
+          </div>
+          <p class="form-help-text">
+            Se detectan empresa principal y respaldo automáticamente según el host. Usa <strong>Validar</strong> para
+            solo revisar qué cambios se pueden hacer, o <strong>Ejecutar</strong> para aplicar apagado/encendido de bits,
+            generación de delete/purge y actualizaciones en bases de datos.
+          </p>
+        </div>
+        <div class="form-right">
+          <button type="button" class="btn btn-secondary" id="verificarBtn">
+            Validar
+          </button>
+          <button type="button" class="btn btn-primary" id="buscarKeyBtn">
+            Ejecutar
+          </button>
+          <button type="button" class="btn btn-primary btn-outline" id="consultarPiBtn">
+            Consultar PI
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">
+        Resumen
+      </button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">
+        Consola
+      </button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">
+        Resultados
+      </button>
+    </div>
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+      <div class="output-panel" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta",
+          file_list_id="resultFileList",
+          details_id="resultDetails"
+        ) }}
+      </div>
+    </div>
+  </section>
+</section>
+
+<div id="confirmModal" class="confirm-modal">
+  <div class="confirm-modal__dialog">
+    <h4>Confirma ejecución de Delete/Purge</h4>
+    <p>Ejecuta los archivos generados en HSH y confirma para continuar.</p>
+    <ul id="confirmList" class="confirm-modal__list"></ul>
+    <div class="confirm-modal__actions">
+      <button type="button" class="btn btn-secondary" id="confirmCancel">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="confirmAccept">Ya ejecuté</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+{% endblock %}

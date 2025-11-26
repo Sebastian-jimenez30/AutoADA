@@ -213,12 +213,13 @@ def main():
         else:
             print("SOE_Local.csv correcto...\n")
 
-        # ----------------- Matching con tolerancia (idéntico al suelto) -----------------
+        # ----------------- Matching con tolerancia (idéntico al suelto, con fallback) -----------------
         tol = pd.Timedelta(milliseconds=int(args.tolerancia_ms))
+        tol_fallback = pd.Timedelta(milliseconds=max(int(args.tolerancia_ms), 50))
 
         # asegurar tiempos como datetime
-        df_soe_local["time_local"] = pd.to_datetime(df_soe_local["time_local"])
-        df_soe_monarch["time_monarch"] = pd.to_datetime(df_soe_monarch["time_monarch"])
+        df_soe_local["time_local"] = pd.to_datetime(df_soe_local["time_local"], errors="coerce")
+        df_soe_monarch["time_monarch"] = pd.to_datetime(df_soe_monarch["time_monarch"], errors="coerce")
 
         resultados_combinados = []
         ioa_checklist = df_checklist["IOA"].unique()
@@ -233,19 +234,30 @@ def main():
             if c not in df_soe_local.columns:
                 df_soe_local[c] = "" if c != "IOA_local" else pd.NA
 
-        for ioa in ioa_checklist:
-            df_loc_l = df_soe_local[df_soe_local["IOA_local"] == ioa][cols_local]
-            df_loc_m = df_soe_monarch[df_soe_monarch["IOA_monarch"] == ioa]
+        def _build_matches(tolerance: "pd.Timedelta") -> list["pd.DataFrame"]:
+            matches: list["pd.DataFrame"] = []
+            for ioa in ioa_checklist:
+                df_loc_l = df_soe_local[df_soe_local["IOA_local"] == ioa][cols_local]
+                df_loc_m = df_soe_monarch[df_soe_monarch["IOA_monarch"] == ioa]
+                if df_loc_l.empty or df_loc_m.empty:
+                    continue
+                for _, row_local in df_loc_l.iterrows():
+                    for _, row_monarch in df_loc_m.iterrows():
+                        diff = row_local["time_local"] - row_monarch["time_monarch"]
+                        if pd.isna(diff):
+                            continue
+                        if abs(diff) <= tolerance:
+                            combined_row = pd.DataFrame(
+                                [row_local.values.tolist() + row_monarch.values.tolist()],
+                                columns=row_local.index.tolist() + row_monarch.index.tolist()
+                            )
+                            matches.append(combined_row)
+            return matches
 
-            for _, row_local in df_loc_l.iterrows():
-                for _, row_monarch in df_loc_m.iterrows():
-                    diff = row_local["time_local"] - row_monarch["time_monarch"]
-                    if abs(diff) <= tol:
-                        combined_row = pd.DataFrame(
-                            [row_local.values.tolist() + row_monarch.values.tolist()],
-                            columns=row_local.index.tolist() + row_monarch.index.tolist()
-                        )
-                        resultados_combinados.append(combined_row)
+        resultados_combinados = _build_matches(tol)
+        if not resultados_combinados:
+            print("info: Sin coincidencias con la tolerancia base, probando fallback de 50 ms...")
+            resultados_combinados = _build_matches(tol_fallback)
 
         if resultados_combinados:
             df_soe_comb = pd.concat(resultados_combinados, ignore_index=True)

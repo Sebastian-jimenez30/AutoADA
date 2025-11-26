@@ -3,18 +3,19 @@ from __future__ import annotations
 import csv
 import json
 import os
+import re
 import pandas as pd
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from .common import (
     Logger,
     Workbook,
     build_cmd,
     messagebox,
-    show_success_with_open,
+    show_summary_dialog,
     sshserver,
     scada_online,
     SCADA_HOSTS_FULL,
@@ -127,6 +128,63 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
     delete_keys_by_emp: defaultdict[str, set[str]] = defaultdict(set)
     scada_actions: list[dict[str, str]] = []
 
+    def _normalize_base_key(value: object) -> str:
+        token = str(value or "").strip()
+        if not token:
+            return ""
+        match = re.search(r"\d{5,}", token)
+        if match:
+            return match.group(0).upper()
+        token = token.split("|")[-1]
+        token = token.split("->", 1)[0]
+        token = token.split(".", 1)[0]
+        token = token.split(":", 1)[-1]
+        token = token.strip(" -")
+        return token.upper()
+
+    def _collect_target_keys() -> Set[str]:
+        targets: Set[str] = set()
+        for keys in delete_keys_by_emp.values():
+            for key in keys:
+                cleaned = _normalize_base_key(key)
+                if cleaned:
+                    targets.add(cleaned)
+        return targets
+
+    def _collect_removed_keys() -> Set[str]:
+        removed: Set[str] = set()
+        for keys in verified_removed.values():
+            for key in keys:
+                cleaned = _normalize_base_key(key)
+                if cleaned:
+                    removed.add(cleaned)
+        return removed
+
+    def _collect_pending_keys(removed: Set[str]) -> Set[str]:
+        pending: Set[str] = set()
+        for keys in lookup_still.values():
+            for key in keys:
+                cleaned = _normalize_base_key(key)
+                if cleaned:
+                    pending.add(cleaned)
+        for keys in verification_failures.values():
+            for key in keys:
+                cleaned = _normalize_base_key(key)
+                if cleaned:
+                    pending.add(cleaned)
+        targets = _collect_target_keys()
+        if targets:
+            pending.update(targets - removed)
+        return pending
+
+    def _build_eliminar_summary() -> Tuple[str, List[str], List[str]]:
+        removed = _collect_removed_keys()
+        pending = _collect_pending_keys(removed)
+        summary = f"Claves eliminadas: {len(removed)}"
+        return summary, sorted(removed), sorted(pending)
+    errors: List[str] = []
+    completed: List[str] = []
+
     def _extract_base_keys_from_excel(path: str) -> set[str]:
         try:
             df = pd.read_excel(path, sheet_name="Eliminar Tag", dtype=str)
@@ -175,40 +233,41 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
         scada_metadata_cache[emp_u] = (info_emp, suffix_map)
         return scada_metadata_cache[emp_u]
 
-    def _build_scada_descriptors(emp: str, base_suffix_map: dict[str, set[str]]) -> list[str]:
-        emp_u = emp.upper()
-        if not base_suffix_map:
-            return []
-        info_emp, scada_suffixes = _get_scada_metadata(emp_u)
-        descriptors: list[str] = []
-        for base, suffixes in base_suffix_map.items():
-            base_u = base.upper()
-            suffix_union = {s.strip().upper() for s in suffixes if s}
-            suffix_union.update(scada_suffixes.get(base_u, set()))
-            scada_entry = info_emp.get(base_u)
-            tipo, bit = _determine_scada_action(suffix_union, scada_entry)
-            hosts = [h for h in SCADA_HOSTS_FULL.get(emp_u, []) if h]
-            if not hosts:
-                fallback: list[str] = []
-                for dom in ("CC", "QA"):
-                    host = app.generar_server(emp_u, dom)
-                    if host:
-                        fallback.append(host)
-                hosts = fallback
-            if not hosts:
-                _console(f"[SCADA] {emp_u}: no se encontraron hosts configurados para {base_u}", "warn")
+    def _collect_scada_hosts(emp_u: str) -> List[Tuple[str, str]]:
+        domain_hosts: Dict[str, Set[str]] = {"CC": set(), "QA": set()}
+        for host in SCADA_HOSTS_FULL.get(emp_u, []) or []:
+            host = host.strip()
+            if not host:
                 continue
-            for host in hosts:
-                domain = "QA" if "qds" in host.lower() else "CC"
-                descriptors.append(f"{emp_u}|{domain}|{base_u}|{tipo}:{bit}")
-        return list(dict.fromkeys(descriptors))
+            domain = "QA" if "qds" in host.lower() else "CC"
+            domain_hosts.setdefault(domain, set()).add(host)
+        for dom in ("CC", "QA"):
+            try:
+                host = app.generar_server(emp_u, dom)
+            except Exception:
+                host = None
+            if host:
+                domain_hosts.setdefault(dom, set()).add(host)
+        entries: List[Tuple[str, str]] = []
+        for dom in ("CC", "QA"):
+            for host in sorted(domain_hosts.get(dom, set())):
+                entries.append((dom, host))
+        return entries
 
-    def _execute_scada_actions(descriptors: list[str], enable: bool, record_storage: Optional[list[dict[str, str]]] = None) -> tuple[list[str], bool]:
-        if not descriptors:
-            return [], False
+    def _apply_scada_dbset(
+        emp_u: str,
+        base_suffix_map: dict[str, set[str]],
+        enable: bool,
+        action_label: str,
+    ) -> tuple[List[str], bool]:
+        updates: List[str] = []
+        if not base_suffix_map:
+            return updates, False
+
         env_secure = app.secure_env()
         prev_env = {k: os.environ.get(k) for k in env_secure}
         os.environ.update(env_secure)
+
         log_dir = Path(app.base_dir) / "out" / "log"
         log_dir.mkdir(parents=True, exist_ok=True)
         logger = logger_console = None
@@ -218,133 +277,203 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                 logger, logger_console = Logger.initlog(str(log_dir / log_name), append=True)
             except Exception:
                 logger = logger_console = None
-        updates: list[str] = []
+
         has_fail = False
-        processed: set[tuple[str, str, str, int, int, bool]] = set()
-        try:
-            for descriptor in descriptors:
-                parts = [p.strip() for p in descriptor.split("|")]
-                if len(parts) < 4:
-                    msg = f"Descriptor SCADA invalido: {descriptor}"
-                    updates.append(msg)
-                    has_fail = True
+        accion = "Encender" if enable else "Apagar"
+        info_emp, scada_suffixes = _get_scada_metadata(emp_u)
+        hosts = _collect_scada_hosts(emp_u)
+        if not hosts:
+            msg = f"[SCADA] {emp_u}: no se encontraron servidores SCADA configurados"
+            updates.append(msg)
+            has_fail = True
+            scada_actions.append({
+                "empresa": emp_u,
+                "dominio": "-",
+                "host": "",
+                "base_key": "",
+                "tipo": "",
+                "bit": "",
+                "resultado": "sin_servidor",
+                "mensaje": "sin servidores SCADA configurados",
+                "accion": action_label,
+            })
+            return updates, True
+
+        # Seleccionar CC online y QADS (QA) una sola vez por empresa
+        selected_hosts: list[tuple[str, str]] = []
+
+        def _pick_online(domain_label: str) -> Optional[tuple[str, str]]:
+            for dom, host in hosts:
+                if dom != domain_label:
                     continue
-                emp_key, domain, base_key, bit_spec = parts[:4]
-                emp_u = emp_key.upper()
+                label = f"{emp_u} {dom}"
+                client = None
                 try:
-                    tipo_str, bit_str = bit_spec.split(":")
-                    tipo = int(tipo_str)
-                    bit = int(bit_str)
-                except ValueError:
-                    msg = f"Bit spec invalido: {bit_spec}"
-                    updates.append(msg)
-                    has_fail = True
-                    continue
-                candidates = [h for h in SCADA_HOSTS_FULL.get(emp_u, []) if h and ((domain.upper() == "QA" and "qds" in h.lower()) or (domain.upper() != "QA" and "qds" not in h.lower()))]
-                if not candidates:
-                    host = app.generar_server(emp_u, domain.upper())
-                    if host:
-                        candidates = [host]
-                if not candidates:
-                    msg = f"{emp_u} {domain}: sin host SCADA configurado"
-                    updates.append(msg)
-                    has_fail = True
-                    continue
-                for host in candidates:
-                    key = (emp_u, host, base_key.upper(), tipo, bit, enable)
-                    if key in processed:
-                        continue
-                    processed.add(key)
-                    client = None
-                    accion = "Encender" if enable else "Apagar"
-                    try:
-                        client = sshserver(host, logger, logger_console) if logger is not None else sshserver(host)
-                        if client is None:
-                            raise RuntimeError("sshserver retorno None")
-                        host_online = None
-                        if scada_online is not None:
+                    client = sshserver(host, logger, logger_console)
+                    if client is None:
+                        raise RuntimeError("sshserver returned None")
+                    host_online = None
+                    if scada_online is not None:
+                        try:
                             host_online = scada_online(client, logger, logger_console)
-                        if scada_online is not None and not host_online:
-                            msg = f"SCADA {host}: sin estado ONLINE, se omite {accion.lower()} {base_key}"
+                        except Exception as exc:
+                            msg = f"[SCADA] {label}: error verificando estado ONLINE ({exc})"
                             updates.append(msg)
                             has_fail = True
-                            if record_storage is not None:
-                                record_storage.append({
-                                    "empresa": emp_u,
-                                    "dominio": "QA" if "qds" in host.lower() else "CC",
-                                    "host": host,
-                                    "base_key": base_key.upper(),
-                                    "tipo": str(tipo),
-                                    "bit": str(bit),
-                                    "resultado": "offline",
-                                    "mensaje": msg,
-                                })
+                            scada_actions.append({
+                                "empresa": emp_u,
+                                "dominio": dom,
+                                "host": host,
+                                "base_key": "",
+                                "tipo": "",
+                                "bit": "",
+                                "resultado": "error_estado",
+                                "mensaje": str(exc),
+                                "accion": action_label,
+                            })
+                    if scada_online is not None and not host_online:
+                        msg = f"[SCADA] {label}: sin estado ONLINE; se omiten updates."
+                        updates.append(msg)
+                        has_fail = True
+                        scada_actions.append({
+                            "empresa": emp_u,
+                            "dominio": dom,
+                            "host": host,
+                            "base_key": "",
+                            "tipo": "",
+                            "bit": "",
+                            "resultado": "offline",
+                            "mensaje": "host sin estado ONLINE",
+                            "accion": action_label,
+                        })
+                        continue
+                    return label, host
+                except Exception as exc:
+                    msg = f"[SCADA] {label}: error conectando ({exc})"
+                    updates.append(msg)
+                    has_fail = True
+                    scada_actions.append({
+                        "empresa": emp_u,
+                        "dominio": dom,
+                        "host": host,
+                        "base_key": "",
+                        "tipo": "",
+                        "bit": "",
+                        "resultado": "error_conexion",
+                        "mensaje": str(exc),
+                        "accion": action_label,
+                    })
+                finally:
+                    if client is not None:
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
+            return None
+
+        # CC
+        cc = _pick_online("CC")
+        if cc:
+            selected_hosts.append(cc)
+        else:
+            msg = f"[SCADA] {emp_u}: no se encontro SCADA CC ONLINE para {accion.lower()}."
+            updates.append(msg)
+            has_fail = True
+
+        # QA / QADS
+        qa = _pick_online("QA")
+        if qa:
+            selected_hosts.append(qa)
+
+        if not selected_hosts:
+            return updates, has_fail
+
+        # Aplicar dbset en hosts seleccionados (CC online y QADS)
+        try:
+            for domain_label, host in selected_hosts:
+                label = f"{emp_u} {domain_label}"
+                client = None
+                try:
+                    client = sshserver(host, logger, logger_console)
+                    if client is None:
+                        raise RuntimeError("sshserver returned None")
+                    for base, suffixes in base_suffix_map.items():
+                        base_u = base.strip().upper()
+                        if not base_u:
                             continue
+                        suffix_union = {s.strip().upper() for s in suffixes if s}
+                        suffix_union.update(scada_suffixes.get(base_u, set()))
+                        scada_entry = info_emp.get(base_u)
+                        tipo, bit = _determine_scada_action(list(suffix_union), scada_entry) if suffix_union else _determine_scada_action([], scada_entry)
                         valor = 1 if enable else 0
-                        cmd = f". ~/.bash_profile && dbset -k 10 {tipo} 12 {base_key} {bit} = {valor}"
+                        cmd = f". ~/.bash_profile && dbset -k 10 {tipo} 12 {base_u} {bit} = {valor}"
                         stdin, stdout, stderr = client.exec_command(cmd)
                         rc = stdout.channel.recv_exit_status()
                         if rc == 0:
-                            msg = f"SCADA {host}: {accion} OK {base_key} bit {bit}"
+                            msg = f"[SCADA] {label}: {accion} OK {base_u} bit {bit}"
                             updates.append(msg)
-                            if record_storage is not None:
-                                record_storage.append({
-                                    "empresa": emp_u,
-                                    "dominio": "QA" if "qds" in host.lower() else "CC",
-                                    "host": host,
-                                    "base_key": base_key.upper(),
-                                    "tipo": str(tipo),
-                                    "bit": str(bit),
-                                    "resultado": "ok",
-                                    "mensaje": msg,
-                                })
+                            scada_actions.append({
+                                "empresa": emp_u,
+                                "dominio": domain_label,
+                                "host": host,
+                                "base_key": base_u,
+                                "tipo": str(tipo),
+                                "bit": str(bit),
+                                "resultado": "ok",
+                                "mensaje": f"{accion.lower()} ok",
+                                "accion": action_label,
+                            })
                         else:
                             err = stderr.read().decode("utf-8", "ignore").strip()
-                            msg = f"SCADA {host}: fallo {base_key} bit {bit} (rc={rc}) {err}"
+                            msg = f"[SCADA] {label}: fallo {accion.lower()} {base_u} bit {bit} ({err or f'rc={rc}'})"
                             updates.append(msg)
                             has_fail = True
-                            if record_storage is not None:
-                                record_storage.append({
-                                    "empresa": emp_u,
-                                    "dominio": "QA" if "qds" in host.lower() else "CC",
-                                    "host": host,
-                                    "base_key": base_key.upper(),
-                                    "tipo": str(tipo),
-                                    "bit": str(bit),
-                                    "resultado": "error",
-                                    "mensaje": msg,
-                                })
-                    except Exception as exc:
-                        msg = f"SCADA {host}: error {base_key} bit {bit}: {exc}"
-                        updates.append(msg)
-                        has_fail = True
-                        if record_storage is not None:
-                            record_storage.append({
+                            scada_actions.append({
                                 "empresa": emp_u,
-                                "dominio": "QA" if "qds" in host.lower() else "CC",
+                                "dominio": domain_label,
                                 "host": host,
-                                "base_key": base_key.upper(),
+                                "base_key": base_u,
                                 "tipo": str(tipo),
                                 "bit": str(bit),
                                 "resultado": "error",
-                                "mensaje": msg,
+                                "mensaje": err or f"rc={rc}",
+                                "accion": action_label,
                             })
-                    finally:
-                        if client is not None:
-                            try:
-                                client.close()
-                            except Exception:
-                                pass
+                except Exception as exc:
+                    msg = f"[SCADA] {label}: error conectando o ejecutando comandos ({exc})"
+                    updates.append(msg)
+                    has_fail = True
+                    scada_actions.append({
+                        "empresa": emp_u,
+                        "dominio": domain_label,
+                        "host": host,
+                        "base_key": "",
+                        "tipo": "",
+                        "bit": "",
+                        "resultado": "error_conexion",
+                        "mensaje": str(exc),
+                        "accion": action_label,
+                    })
+                finally:
+                    if client is not None:
+                        try:
+                            client.close()
+                        except Exception:
+                            pass
         finally:
-            for k, v in prev_env.items():
-                if v is None:
-                    os.environ.pop(k, None)
+            for key, value in prev_env.items():
+                if value is None:
+                    os.environ.pop(key, None)
                 else:
-                    os.environ[k] = v
+                    os.environ[key] = value
+
         return updates, has_fail
 
-    # ---------- Parser de salida del script ----------
+    total_candidates: int = 0
+    ready_candidates: int = 0
+
     def _on_progress_eliminar(line: str):
+        nonlocal total_candidates, ready_candidates
         line = (line or "").strip()
         if not line:
             return
@@ -404,6 +533,7 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                 emp_u = emp.strip().upper()
                 keys = [k.strip() for k in keys_part.split(",") if k.strip()]
                 lookup_would_delete[emp_u] = keys
+                ready_candidates += len(keys)
             except Exception:
                 pass
         elif line.startswith("LOOKUP_REMOVED:"):
@@ -473,11 +603,12 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
             _console("[SCADA] No hay claves registradas para apagar en SCADA.", "info")
             return updates
 
-        descriptors: list[str] = []
+        _console("[SCADA] Ejecutando apagado de bits en todos los SCADA configurados...", "warn")
+        has_fail_global = False
         for emp_u, keys in delete_keys_by_emp.items():
             if not keys:
                 continue
-            base_suffix_map: dict[str, set[str]] = {}
+            base_map: dict[str, set[str]] = {}
             for raw_key in sorted(keys):
                 key = (raw_key or "").strip()
                 if not key:
@@ -486,32 +617,22 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                 base_u = base.strip().upper()
                 if not base_u:
                     continue
-                suffixes = base_suffix_map.setdefault(base_u, set())
+                suffixes = base_map.setdefault(base_u, set())
                 if dot and suf:
                     suffixes.add(suf.strip().upper())
-            descriptors.extend(_build_scada_descriptors(emp_u, base_suffix_map))
+            updates_emp, fail_emp = _apply_scada_dbset(emp_u, base_map, enable=False, action_label="apagado-final")
+            for line in updates_emp:
+                lower = line.lower()
+                if any(token in lower for token in ("error", "fallo", "offline", "omit", "warn", "sin estado")):
+                    tag = "error" if "error" in lower or "fallo" in lower else "warn"
+                else:
+                    tag = "info"
+                _console(f"[SCADA] {line}", tag)
+                updates.append(line)
+            if fail_emp:
+                has_fail_global = True
 
-        if not descriptors and excel_scada_maps:
-            for emp_u, base_map in excel_scada_maps.items():
-                descriptors.extend(_build_scada_descriptors(emp_u, base_map))
-
-        descriptors = list(dict.fromkeys(descriptors))
-        if not descriptors:
-            _console("[SCADA] No se generaron descriptores para apagar bits.", "warn")
-            return updates
-
-        _console("[SCADA] Ejecutando apagado de bits en todos los SCADA configurados...", "warn")
-        actions_updates, has_fail = _execute_scada_actions(descriptors, enable=False, record_storage=scada_actions)
-        for line in actions_updates:
-            lower = line.lower()
-            if any(token in lower for token in ("error", "fallo", "offline", "omit")):
-                tag = "error" if "error" in lower or "fallo" in lower else "warn"
-            else:
-                tag = "info"
-            _console(f"[SCADA] {line}", tag)
-            updates.append(line)
-
-        if has_fail:
+        if has_fail_global:
             _console("[SCADA] Hubo incidencias al apagar bits; revisa los detalles previos.", "error")
         else:
             _console("[SCADA] Apagado de bits finalizado sin errores.", "info")
@@ -562,9 +683,13 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
         _run_next()
 
     def _post_verification_success():
-        _console("[SCADA] Apagando bits en todos los servidores...", "warn")
-        _apagar_bits_scada()
-        _finish(0)
+        if aplicar:
+            _console("[SCADA] Apagando bits en todos los servidores...", "warn")
+            _apagar_bits_scada()
+            _finish(0)
+        else:
+            msg_resumen = f"Tags listos para eliminar: {ready_candidates}"
+            _finish(0, msg_resumen)
 
     def _start_verification():
         verify_queue: list[tuple[str, str, list[str]]] = []
@@ -578,7 +703,7 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                 verify_queue.append((emp_name, server_name, keys))
 
         if not verify_queue:
-            _console("[VERIFICAR] No hay claves para confirmar en lookup_table; se continuar?? con el apagado de bits.", "info")
+            _console("[VERIFICAR] No hay claves para confirmar en lookup_table; se continuara con el apagado de bits.", "info")
             _post_verification_success()
             return
 
@@ -648,6 +773,28 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
         def _end():
             _restore_buttons()
             app.stop_status()
+
+            summary_text, removed_list, pending_list = _build_eliminar_summary()
+            detail_lines: List[str] = []
+
+            # Modo validar: solo mostrar candidatos listos, sin hablar de eliminacion real
+            if not aplicar and rc == 0:
+                resumen = msg or "Tags listos para eliminar: 0"
+                show_summary_dialog(
+                    parent=app.ventana,
+                    mensaje=resumen,
+                    title="Validacion Eliminacion HSH lista",
+                    status="success",
+                    details=None,
+                    files=report_paths or None,
+                    show_open_file=bool(report_paths),
+                )
+                return
+
+            attachments: List[str] = []
+            dialog_status = "success" if rc == 0 else "error"
+            dialog_title = "Eliminacion HSH completa" if rc == 0 else "Eliminacion HSH con errores"
+
             if rc == 0:
                 resumen: list[str] = []
 
@@ -687,12 +834,6 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                     if Workbook is None:
                         _console("[REPORT] openpyxl no disponible; no se genera reporte Excel.", "warn")
                         return None
-
-                    def _fmt_list(values: list[str]) -> str:
-                        if not values:
-                            return "-"
-                        return f"{len(values)} -> " + ", ".join(values)
-
                     try:
                         wb = Workbook()
                         summary_ws = wb.active
@@ -702,7 +843,7 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                             "Claves entrada",
                             "Tags lookup eliminados",
                             "Tags lookup restantes",
-                            "Claves verificación OK",
+                            "Claves verificacion OK",
                             "Claves con fallo",
                         ])
                         for emp in sorted(server_map.keys()):
@@ -727,109 +868,32 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                             "Tags lookup",
                             "Tags eliminados",
                             "Tags restantes",
-                            "Verificación",
-                            "Groups",
-                            "SCADA acciones",
                         ])
-
                         for emp in sorted(server_map.keys()):
-                            base_union: Set[str] = set()
-                            base_union.update(k.split(".", 1)[0] for k in delete_keys_by_emp.get(emp, set()))
-                            base_union.update(lookup_statuses.get(emp, {}).keys())
-                            base_union.update(group_matches.get(emp, {}).keys())
-                            base_union.update(k.split(".", 1)[0] for k in lookup_would_delete.get(emp, []))
-                            base_union.update(k.split(".", 1)[0] for k in lookup_removed.get(emp, []))
-                            base_union.update(k.split(".", 1)[0] for k in lookup_still.get(emp, []))
-                            base_union.update(k.split(".", 1)[0] for k in verified_removed.get(emp, []))
-                            base_union.update(k.split(".", 1)[0] for k in verification_failures.get(emp, []))
-
-                            for base in sorted(base_union):
-                                input_variants = sorted(k for k in delete_keys_by_emp.get(emp, set()) if k.startswith(base))
-                                would_list = sorted(k for k in lookup_would_delete.get(emp, []) if k.startswith(base))
-                                removed_list = sorted(k for k in lookup_removed.get(emp, []) if k.startswith(base))
-                                still_list = sorted(k for k in lookup_still.get(emp, []) if k.startswith(base))
-                                verified_list = sorted(k for k in verified_removed.get(emp, []) if k.startswith(base))
-                                fail_keys = sorted(k for k in verification_failures.get(emp, []) if k.startswith(base))
-                                lookup_union = sorted(set(input_variants) | set(would_list) | set(removed_list) | set(still_list))
-                                status_lookup = (lookup_statuses.get(emp, {}).get(base, "") or "").lower() or "desconocido"
-                                group_entries = group_matches.get(emp, {}).get(base, [])
-                                group_texts: list[str] = []
-                                for entry in group_entries:
-                                    variant = (entry.get("variant") or base).strip()
-                                    cpid = (entry.get("cpid") or "").strip()
-                                    uid = (entry.get("uid") or "").strip()
-                                    point = (entry.get("point") or "").strip()
-                                    pieces: list[str] = []
-                                    if variant:
-                                        pieces.append(variant)
-                                    path = "/".join(part for part in (cpid, uid) if part)
-                                    if path:
-                                        pieces.append(path)
-                                    if point:
-                                        pieces.append(point)
-                                    group_texts.append(" | ".join(pieces))
-
-                                scada_texts: list[str] = []
-                                for action in scada_actions:
-                                    if action.get("empresa") != emp:
-                                        continue
-                                    base_key = action.get("base_key")
-                                    if base_key and base_key.split(".", 1)[0] == base:
-                                        dom = action.get("dominio") or "-"
-                                        host = action.get("host") or "-"
-                                        bit = action.get("bit") or "-"
-                                        resultado = action.get("resultado") or "-"
-                                        mensaje = action.get("mensaje") or "-"
-                                        scada_texts.append(f"{dom}/{host} bit {bit} -> {resultado} ({mensaje})")
-
-                                if not scada_texts:
-                                    generic_actions = [
-                                        action for action in scada_actions
-                                        if action.get("empresa") == emp and not action.get("base_key")
-                                    ]
-                                    for action in generic_actions:
-                                        dom = action.get("dominio") or "-"
-                                        host = action.get("host") or "-"
-                                        resultado = action.get("resultado") or "-"
-                                        mensaje = action.get("mensaje") or "-"
-                                        scada_texts.append(f"{dom}/{host} -> {resultado} ({mensaje})")
-
-                                if fail_keys:
-                                    status_text = f"FALLO ({', '.join(fail_keys)})"
-                                elif verified_list:
-                                    status_text = f"OK ({len(verified_list)} claves)"
-                                elif lookup_union:
-                                    status_text = "Procesado"
-                                else:
-                                    status_text = "Sin actividad"
-
+                            statuses = lookup_statuses.get(emp, {})
+                            bases = sorted(set(statuses.keys()) | set(lookup_would_delete.get(emp, [])))
+                            for base in bases:
+                                status_txt = statuses.get(base, "SIN INFO")
                                 detail_ws.append([
                                     emp,
                                     base,
-                                    status_lookup,
-                                    _fmt_list(input_variants),
-                                    _fmt_list(lookup_union),
-                                    _fmt_list(removed_list),
-                                    _fmt_list(still_list),
-                                    status_text,
-                                    _fmt_list(group_texts),
-                                    _fmt_list(scada_texts),
+                                    status_txt,
+                                    ", ".join(sorted(delete_keys_by_emp.get(emp, set()))),
+                                    ", ".join(sorted(lookup_removed.get(emp, []))),
+                                    ", ".join(sorted(verified_removed.get(emp, []))),
+                                    ", ".join(sorted(lookup_still.get(emp, []))),
                                 ])
 
-                        if scada_actions:
-                            scada_ws = wb.create_sheet("SCADA")
-                            scada_ws.append(["Empresa", "Dominio", "Host", "BaseKey", "Tipo", "Bit", "Resultado", "Mensaje"])
-                            for action in scada_actions:
-                                scada_ws.append([
-                                    action.get("empresa"),
-                                    action.get("dominio"),
-                                    action.get("host"),
-                                    action.get("base_key"),
-                                    action.get("tipo"),
-                                    action.get("bit"),
-                                    action.get("resultado"),
-                                    action.get("mensaje"),
-                                ])
+                        scada_ws = wb.create_sheet("SCADA")
+                        scada_ws.append(["Empresa", "Dominio", "Accion", "Estado", "Mensaje"])
+                        for action in scada_actions:
+                            scada_ws.append([
+                                action.get("empresa"),
+                                action.get("dominio"),
+                                action.get("accion"),
+                                action.get("estado"),
+                                action.get("mensaje"),
+                            ])
 
                         if delete_files:
                             report_dir = Path(delete_files[0]).parent
@@ -881,21 +945,38 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                             resumen.append(f"  {base}: lookup={status_txt}; groups={group_desc}")
 
                     report_excel_path = _generate_report_excel()
+                    if report_excel_path:
+                        attachments.append(report_excel_path)
 
-                message = "\n".join(resumen) or "Eliminacion completada correctamente."
-                files_to_show: list[str] = [*report_paths, *delete_files, *purge_files]
-                if report_excel_path:
-                    files_to_show.append(report_excel_path)
-                show_success_with_open(
-                    parent=app.ventana,
-                    mensaje=message,
-                    title="Eliminación HSH completa",
-                    files=files_to_show,
-                )
-                app.success_status("Eliminación completada")
+                for emp in sorted(server_map.keys()):
+                    deleted = lookup_deleted.get(emp, 0)
+                    rem = lookup_remaining.get(emp, 0)
+                    detail_lines.append(f"{emp}: eliminados={deleted}, restantes={rem}")
+                    removed_keys = lookup_removed.get(emp, [])
+                    if removed_keys:
+                        detail_lines.append(f"{emp}: claves eliminadas de lookup_table ({len(removed_keys)}): {', '.join(removed_keys)}")
+                attachments.extend(report_paths)
+                attachments.extend(delete_files)
+                attachments.extend(purge_files)
+                app.success_status("Eliminacion completada")
             else:
-                app.error_status("El proceso terminó con errores")
-                messagebox.showerror("Error", msg or "El proceso terminó con errores.", parent=app.ventana)
+                app.error_status("El proceso termino con errores")
+                if msg:
+                    detail_lines.append(msg)
+                attachments.extend(report_paths)
+                attachments.extend(delete_files)
+                attachments.extend(purge_files)
+
+            attachments = [path for path in dict.fromkeys(attachments) if path]
+            show_summary_dialog(
+                parent=app.ventana,
+                mensaje=summary_text or (msg or "Sin informacion"),
+                title=dialog_title,
+                status=dialog_status,
+                details=detail_lines or None,
+                files=attachments or None,
+                show_open_file=bool(attachments),
+            )
         app.ventana.after(0, _end)
 
     def _fail(msg: str):
@@ -906,69 +987,32 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
         if not aplicar:
             _run_eliminar_scripts()
             return
-        descriptors: list[str] = []
-        if excel_scada_maps:
-            for emp_key, base_map in excel_scada_maps.items():
-                descriptors.extend(_build_scada_descriptors(emp_key, base_map))
-        descriptors = list(dict.fromkeys(descriptors))
-        if not descriptors:
+        if not excel_scada_maps:
             _run_eliminar_scripts()
             return
         _set_status("Apagando bits de las claves actuales en SCADA...")
         _console("Apagando bits en todos los SCADA antes de iniciar...", "warn")
-        resumen_inicial, fallo_inicial = _execute_scada_actions(
-            descriptors,
-            enable=False,
-            record_storage=scada_actions,
-        )
-        for linea in resumen_inicial:
-            lower = linea.lower()
-            if any(token in lower for token in ("error", "fallo", "failed", "traceback")):
-                tag = "error"
-            elif any(token in lower for token in ("offline", "omit", "warn")):
-                tag = "warn"
-            else:
-                tag = "info"
-            _console(f"[SCADA-INICIAL] {linea}", tag)
+        fallo_inicial = False
+        for emp_key, base_map in excel_scada_maps.items():
+            emp_u = emp_key.upper()
+            updates_emp, fail_emp = _apply_scada_dbset(emp_u, base_map, enable=False, action_label="pre-apagado")
+            for linea in updates_emp:
+                lower = linea.lower()
+                if any(token in lower for token in ("error", "fallo", "failed", "traceback")):
+                    tag = "error"
+                elif any(token in lower for token in ("offline", "omit", "warn", "sin estado")):
+                    tag = "warn"
+                else:
+                    tag = "info"
+                _console(f"[SCADA-INICIAL] {linea}", tag)
+            if fail_emp:
+                fallo_inicial = True
         if fallo_inicial:
             _fail("No fue posible apagar los bits en SCADA antes de eliminar.")
             return
         _run_eliminar_scripts()
 
     def _run_update_pipeline():
-        cmd_import_principal = build_cmd(
-            "scripts.importar_all",
-            servidor_principal,
-            empresa,
-            "sca,hsh",
-            "--usecase",
-            "hsh_eliminar_tag",
-        )
-        cmd_import_respaldo = (
-            build_cmd(
-                "scripts.importar_all",
-                servidor_respaldo,
-                respaldo,
-                "sca,hsh",
-                "--usecase",
-                "hsh_eliminar_tag",
-            )
-            if respaldo and servidor_respaldo
-            else None
-        )
-        cmd_conv_sca = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
-        cmd_conv_hsh = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")
-        cmd_conv_sca_res = (
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca")
-            if respaldo
-            else None
-        )
-        cmd_conv_hsh_res = (
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh")
-            if respaldo
-            else None
-        )
-
         def _progress_logger(tag: str):
             def _inner(line: str):
                 line = (line or "").strip()
@@ -984,85 +1028,72 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
                 _console(f"[{tag}] {line}", log_tag)
             return _inner
 
-        def _run_convert_hsh_res():
-            if not (respaldo and cmd_conv_hsh_res):
+        def _run_conversion_sequence(emp_name: str, components: List[str], on_done):
+            iterator = iter(components)
+
+            def _run_next_component():
+                try:
+                    component = next(iterator)
+                except StopIteration:
+                    completed.append(emp_name)
+                    on_done()
+                    return
+
+                _set_status(f"Convirtiendo {component.upper()} para {emp_name}...")
+                cmd_conv = build_cmd("scripts.Convertir_all", emp_name, "Validar_HSH", "--only", component)
+                _console(f">> CMD[CONVERT {emp_name}:{component}]: {' '.join(map(str, cmd_conv))}", "warn")
+
+                app.tasks.run_subprocess(
+                    cmd_conv,
+                    env=env,
+                    cwd=cwd,
+                    on_progress=_progress_logger(f"CONVERT-{emp_name}-{component.upper()}"),
+                    on_done=lambda rc: (_run_next_component() if rc == 0 else _fail(f"Conversion {component.upper()} para {emp_name} falló (rc={rc})")),
+                )
+
+            _run_next_component()
+
+        def _run_import_sequence(emp_name: str, server_hint: Optional[str], on_success) -> None:
+            host = (server_hint or "").strip()
+            if not host:
+                errors.append(f"{emp_name}: no se pudo resolver servidor SCADA principal para importar datos.")
+                _fail(f"Importación SCADA/HSH para {emp_name} no tiene servidor principal disponible.")
+                return
+
+            _set_status(f"Importando datos para {emp_name} (perfil hsh_eliminar_tag)...")
+            cmd_import = build_cmd(
+                "scripts.importar_all",
+                host,
+                emp_name,
+                "sca,hsh",
+                "--usecase",
+                "hsh_eliminar_tag",
+            )
+            _console(f">> CMD[IMPORT {emp_name}:{host}]: {' '.join(map(str, cmd_import))}", "warn")
+
+            def _after_import(rc: int):
+                if rc != 0:
+                    errors.append(f"{emp_name}: importar_all terminó con rc={rc} (host {host})")
+                    _fail(f"Importación SCADA/HSH para {emp_name} falló (rc={rc}).")
+                    return
+                _run_conversion_sequence(emp_name, ["sca", "hsh"], on_success)
+
+            app.tasks.run_subprocess(
+                cmd_import,
+                env=env,
+                cwd=cwd,
+                on_progress=_progress_logger(f"IMPORT-{emp_name}@{host}"),
+                on_done=_after_import,
+            )
+
+        def _after_principal():
+            if not (respaldo and servidor_respaldo):
                 _run_pre_scada_then_scripts()
                 return
-            _set_status(f"Convirtiendo HSH respaldo {respaldo}...")
-            _console(f">> CMD[CONVERT HSH respaldo]: {' '.join(map(str, cmd_conv_hsh_res))}", "warn")
-            app.tasks.run_subprocess(
-                cmd_conv_hsh_res,
-                env=env,
-                cwd=cwd,
-                on_progress=_progress_logger("CONVERT-HSH-RES"),
-                on_done=lambda rc: (_run_pre_scada_then_scripts() if rc == 0 else _fail(f"Conversion HSH respaldo ({respaldo}) fallo")),
-            )
-
-        def _run_convert_sca_res():
-            if not (respaldo and cmd_conv_sca_res):
-                _run_convert_hsh_res()
-                return
-            _set_status(f"Convirtiendo SCADA respaldo {respaldo}...")
-            _console(f">> CMD[CONVERT SCADA respaldo]: {' '.join(map(str, cmd_conv_sca_res))}", "warn")
-            app.tasks.run_subprocess(
-                cmd_conv_sca_res,
-                env=env,
-                cwd=cwd,
-                on_progress=_progress_logger("CONVERT-SCADA-RES"),
-                on_done=lambda rc: (_run_convert_hsh_res() if rc == 0 else _fail(f"Conversion SCADA respaldo ({respaldo}) fallo")),
-            )
-
-        def _run_convert_hsh():
-            _set_status("Convirtiendo HSH principal...")
-            _console(f">> CMD[CONVERT HSH principal]: {' '.join(map(str, cmd_conv_hsh))}", "warn")
-            app.tasks.run_subprocess(
-                cmd_conv_hsh,
-                env=env,
-                cwd=cwd,
-                on_progress=_progress_logger("CONVERT-HSH"),
-                on_done=lambda rc: (_run_convert_sca_res() if rc == 0 else _fail("Conversion HSH principal fallo")),
-            )
-
-        def _run_convert_sca():
-            _set_status("Convirtiendo SCADA principal...")
-            _console(f">> CMD[CONVERT SCADA principal]: {' '.join(map(str, cmd_conv_sca))}", "warn")
-            app.tasks.run_subprocess(
-                cmd_conv_sca,
-                env=env,
-                cwd=cwd,
-                on_progress=_progress_logger("CONVERT-SCADA"),
-                on_done=lambda rc: (_run_convert_hsh() if rc == 0 else _fail("Conversion SCADA principal fallo")),
-            )
-
-        def _run_import_res():
-            if not cmd_import_respaldo:
-                _run_convert_sca()
-                return
-            _set_status(f"Sincronizando hsh_eliminar_tag respaldo ({respaldo})...")
-            _console(f">> CMD[IMPORT respaldo]: {' '.join(map(str, cmd_import_respaldo))}", "warn")
-            app.tasks.run_subprocess(
-                cmd_import_respaldo,
-                env=env,
-                cwd=cwd,
-                on_progress=_progress_logger("IMPORT-RES"),
-                on_done=lambda rc: (_run_convert_sca() if rc == 0 else _fail("Importacion SCADA/HSH respaldo fallo")),
-            )
-
-        def _after_import_principal(rc: int):
-            if rc != 0:
-                _fail("Importacion SCADA/HSH principal fallo")
-                return
-            _run_import_res()
+            _run_import_sequence(respaldo, servidor_respaldo, _run_pre_scada_then_scripts)
 
         _set_status("Sincronizando hsh_eliminar_tag (SCADA+HSH)...")
-        _console(f">> CMD[IMPORT principal]: {' '.join(map(str, cmd_import_principal))}", "warn")
-        app.tasks.run_subprocess(
-            cmd_import_principal,
-            env=env,
-            cwd=cwd,
-            on_progress=_progress_logger("IMPORT-PRI"),
-            on_done=_after_import_principal,
-        )
+        _run_import_sequence(empresa, servidor_principal, _after_principal)
 
     # ---------- Inicio ----------
     if aplicar:
@@ -1071,3 +1102,4 @@ def ejecutar_eliminar_tag_hsh(app, aplicar: bool = False, origin: str | None = N
         _run_eliminar_scripts()
 
 __all__ = ["ejecutar_eliminar_tag_hsh"]
+

@@ -6,6 +6,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const ejecutarBtn = document.getElementById("buscarKeyBtn");
   const verificarBtn = document.getElementById("verificarBtn");
   const aplicarInput = document.getElementById("aplicar");
+  const piBtn = document.getElementById("consultarPiBtn");
   const statusBadge = document.getElementById("logStatus");
   const resultBox = document.getElementById("resultMessage");
 
@@ -33,6 +34,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultBaseUrl =
     form.dataset.resultUrl || "/buscar/key/result/data";
   const fileDownloadBase = form.dataset.fileDownload || "";
+  const piUrl = form.dataset.piUrl || "";
+  const confirmUrl = form.dataset.confirmUrl || "";
+  const confirmModal = document.getElementById("confirmModal");
+  const confirmList = document.getElementById("confirmList");
+  const confirmAccept = document.getElementById("confirmAccept");
+  const confirmCancel = document.getElementById("confirmCancel");
   const origin = window.location.origin;
 
   const buildResultUrl = (sheetValue) => {
@@ -608,11 +615,42 @@ document.addEventListener("DOMContentLoaded", () => {
     logOutput.scrollTop = logOutput.scrollHeight;
   };
 
-  const handleStream = async (response) => {
+  const showConfirmModal = (files) =>
+    new Promise((resolve) => {
+      if (!confirmModal || !confirmAccept || !confirmCancel || !confirmList) {
+        // fallback: confirm nativo
+        const ok = window.confirm("Confirma que ejecutaste los archivos Delete/Purge en HSH?");
+        resolve(ok);
+        return;
+      }
+      confirmList.innerHTML = "";
+      if (Array.isArray(files) && files.length) {
+        files.forEach((file) => {
+          const li = document.createElement("li");
+          li.textContent = file;
+          confirmList.appendChild(li);
+        });
+      } else {
+        const li = document.createElement("li");
+        li.textContent = "Sin archivos detectados (revisa la salida).";
+        confirmList.appendChild(li);
+      }
+      confirmModal.classList.add("is-visible");
+      const cleanup = (result) => {
+        confirmModal.classList.remove("is-visible");
+        resolve(result);
+      };
+      confirmAccept.onclick = () => cleanup(true);
+      confirmCancel.onclick = () => cleanup(false);
+    });
+
+  const handleStream = async (response, allowConfirm = true) => {
     const reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
     let finalResult = null;
+    let confirmPending = false;
+    let pendingFiles = [];
 
     while (true) {
       const { done, value } = await reader.read();
@@ -628,9 +666,20 @@ document.addEventListener("DOMContentLoaded", () => {
           handleSummaryPayload(trimmed.substring("SUMMARY::".length));
           continue;
         }
+        if (trimmed.startsWith("CONFIRM_DELETE::")) {
+          confirmPending = true;
+          appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
+          continue;
+        }
         if (trimmed.startsWith("RESULT::")) {
           try {
             finalResult = JSON.parse(trimmed.substring("RESULT::".length));
+            if (finalResult && finalResult.delete_files) {
+              pendingFiles = pendingFiles.concat(finalResult.delete_files || []);
+            }
+            if (finalResult && finalResult.purge_files) {
+              pendingFiles = pendingFiles.concat(finalResult.purge_files || []);
+            }
           } catch {
             finalResult = {
               status: "ERROR",
@@ -650,6 +699,12 @@ document.addEventListener("DOMContentLoaded", () => {
           finalResult = JSON.parse(
             leftover.trim().substring("RESULT::".length),
           );
+          if (finalResult && finalResult.delete_files) {
+            pendingFiles = pendingFiles.concat(finalResult.delete_files || []);
+          }
+          if (finalResult && finalResult.purge_files) {
+            pendingFiles = pendingFiles.concat(finalResult.purge_files || []);
+          }
         } catch {
           finalResult = {
             status: "ERROR",
@@ -658,8 +713,32 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       } else if (leftover.trim().startsWith("SUMMARY::")) {
         handleSummaryPayload(leftover.trim().substring("SUMMARY::".length));
+      } else if (leftover.trim().startsWith("CONFIRM_DELETE::")) {
+        confirmPending = true;
+        appendSummaryMessage("Pendiente confirmación de Delete/Purge...", "warning");
       } else {
         appendLog(`${leftover}\n`);
+      }
+    }
+
+    if (confirmPending && confirmUrl && allowConfirm) {
+      const proceed = await showConfirmModal(pendingFiles);
+      if (!proceed) {
+        return { status: "ERROR", message: "Confirmación cancelada por el usuario." };
+      }
+      appendSummaryMessage("Ejecutando confirmación Delete/Purge...", "info");
+      try {
+        const respConfirm = await fetch(confirmUrl, { method: "POST" });
+        if (respConfirm.ok && respConfirm.body) {
+          const confirmResult = await handleStream(respConfirm, true);
+          if (confirmResult) {
+            finalResult = confirmResult;
+          }
+        } else {
+          appendLog(`[CONFIRM] Respuesta inesperada (${respConfirm.status})\n`);
+        }
+      } catch (err) {
+        appendLog(`[CONFIRM] Error: ${err}\n`);
       }
     }
 
@@ -728,6 +807,45 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
+  const ejecutarConsultaPi = async () => {
+    if (!piUrl) {
+      showResult("ERROR", "No hay endpoint de PI configurado.");
+      return;
+    }
+    setStatus("Consultando PI...", "muted");
+    startSummaryRun();
+    try {
+      const response = await fetch(piUrl, { method: "POST" });
+      if (!response.ok || !response.body) {
+        const txt = await response.text();
+        appendLog(`[PI] Respuesta inesperada (${response.status}): ${txt}\n`);
+        setStatus("Error", "ERROR");
+        finishSummaryRun("error");
+        return;
+      }
+      const result = await handleStream(response);
+      if (result) {
+        showResult(result.status, result.message);
+        setStatus(result.status === "SUCCESS" ? "Completado" : "Error", result.status);
+        finishSummaryRun(result.status === "SUCCESS" ? "success" : "error");
+        if (result.status === "SUCCESS") {
+          resultsNeedsRefresh = true;
+          sheetCache.clear();
+          await loadResults({ force: true, autoActivate: true, sheet: null });
+        }
+      } else {
+        showResult("ERROR", "La consulta PI finalizó sin resultado.");
+        setStatus("Error", "ERROR");
+        finishSummaryRun("error");
+      }
+    } catch (error) {
+      appendLog(`[PI] Error de red: ${error}\n`);
+      showResult("ERROR", "No fue posible conectar para la consulta PI.");
+      setStatus("Error", "ERROR");
+      finishSummaryRun("error");
+    }
+  };
+
   const launchRun = async () => {
     activatePanel("summary");
     resetResultsView();
@@ -763,6 +881,19 @@ document.addEventListener("DOMContentLoaded", () => {
       ejecutarBtn.disabled = false;
       if (verificarBtn) verificarBtn.disabled = false;
       setParamsVisibility(false);
+    });
+  }
+
+  if (piBtn) {
+    piBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      piBtn.disabled = true;
+      ejecutarBtn && (ejecutarBtn.disabled = true);
+      verificarBtn && (verificarBtn.disabled = true);
+      await ejecutarConsultaPi();
+      piBtn.disabled = false;
+      ejecutarBtn && (ejecutarBtn.disabled = false);
+      verificarBtn && (verificarBtn.disabled = false);
     });
   }
 

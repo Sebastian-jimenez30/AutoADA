@@ -19,7 +19,7 @@ except Exception:
     Workbook = None  # type: ignore
 
 from utils.cli import build_cmd
-from ui.components.success_dialog import show_success_with_open
+from ui.components.success_dialog import show_success_with_open, show_summary_dialog
 
 import paramiko
 
@@ -93,6 +93,7 @@ __all__ = [
     "Workbook",
     "build_cmd",
     "show_success_with_open",
+    "show_summary_dialog",
     "paramiko",
     "Logger",
     "sshserver",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Set
@@ -12,7 +13,7 @@ from .common import (
     build_cmd,
     collect_pi_snapshots,
     messagebox,
-    show_success_with_open,
+    show_summary_dialog,
     sshserver,
     scada_online,
     SCADA_HOSTS_FULL,
@@ -206,6 +207,12 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
         "log_path": log_path,
     }
 
+    # Exponer el estado bruto del flujo para posibles consultas PI posteriores
+    try:
+        app._cambiar_key_state = state  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
 
     def _generate_report_excel() -> Optional[str]:
         state["report_excel_path"] = None
@@ -394,8 +401,109 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
         _console(f"[REPORT] Reporte Excel generado: {report_path}", "info")
         return state["report_excel_path"]
 
+    def _normalize_key_token(value: object) -> str:
+        token = str(value or "").strip()
+        if not token:
+            return ""
+        match = re.search(r"\d{5,}", token)
+        if match:
+            return match.group(0).upper()
+        token = token.split("|")[-1].split("->")[0]
+        token = token.split(":", 1)[-1] if ":" in token and token.split(":", 1)[0].upper() in {"ITCO", "TRA", "REPS", "REPP"} else token
+        token = token.split(".", 1)[0]
+        token = token.strip(" -:")
+        return token.upper()
 
-    def _compose_failure_details() -> str:
+    def _collect_keys_from(value: object) -> Set[str]:
+        result: Set[str] = set()
+        if not value:
+            return result
+        if isinstance(value, (list, tuple, set)):
+            iterable = value
+        else:
+            iterable = [value]
+        for item in iterable:
+            cleaned = _normalize_key_token(item)
+            if cleaned:
+                result.add(cleaned)
+        return result
+
+    def _manual_key_set() -> Set[str]:
+        manual = _collect_keys_from(state.get("manual_keys"))
+        if manual:
+            return manual
+        return _collect_keys_from(state.get("pending_keys"))
+
+    def _pending_key_set() -> Set[str]:
+        return _collect_keys_from(state.get("pending_keys"))
+
+    def _changed_key_set() -> Set[str]:
+        changed: Set[str] = set()
+        for pair in state.get("changed_pairs") or []:
+            reference = pair
+            if "->" in reference:
+                reference = reference.split("->", 1)[0]
+            cleaned = _normalize_key_token(reference)
+            if cleaned:
+                changed.add(cleaned)
+        return changed
+
+    def _build_key_summary() -> Tuple[str, List[str], List[str]]:
+        manual = _manual_key_set()
+        changed = _changed_key_set()
+        pending = _pending_key_set()
+        derived_pending = set(pending)
+        if manual:
+            derived_pending.update(manual - changed)
+        summary_text = f"Claves cambiadas: {len(changed)}"
+        return summary_text, sorted(changed), sorted(derived_pending)
+
+    def _pi_value_line(emp: str, tag: str) -> str:
+        tag_clean = tag.strip()
+        if not tag_clean:
+            return ""
+        rows = (state.get("pi_snapshot_map") or {}).get(emp, [])
+        tag_upper = tag_clean.upper()
+        for row in rows or []:
+            name = str(row.get("Name") or "").strip()
+            if name.upper() == tag_upper:
+                value = row.get("Value")
+                value_txt = str(value) if value not in (None, "") else "OK"
+                return f"{tag_clean} = {value_txt}"
+        missing = {t.upper() for t in (state.get("pi_missing_map") or {}).get(emp, []) or []}
+        if tag_upper in missing:
+            return f"{tag_clean} = No Data"
+        return f"{tag_clean} = Sin lectura PI"
+
+    def _build_company_pi_lines(emp: str) -> List[str]:
+        tags = sorted((state.get("pi_tags") or {}).get(emp, []))
+        if not tags:
+            return []
+        lines: List[str] = []
+        for tag in tags:
+            line = _pi_value_line(emp, tag)
+            if line:
+                lines.append(line)
+        return lines
+
+    def _collect_output_files(include_delete: bool = True) -> List[str]:
+        paths: List[str] = []
+        for key in ("report_paths", "info_paths", "query_paths"):
+            paths.extend(state.get(key) or [])
+        if include_delete:
+            paths.extend(state.get("delete_files") or [])
+            paths.extend(state.get("purge_files") or [])
+        log_file = state.get("log_path")
+        if log_file:
+            paths.append(log_file)
+        unique: List[str] = []
+        for path in paths:
+            if path and path not in unique:
+                unique.append(path)
+        return unique
+
+
+    def _compose_failure_details() -> List[str]:
         lines: List[str] = []
         errors = list(dict.fromkeys(state.get("script_errors") or []))
         if errors:
@@ -413,17 +521,44 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
         if pi_missing:
             lines.append("Tags PI sin informacion:")
             lines.extend(f"  - {desc}" for desc in pi_missing)
-        return "\n".join(lines)
+        return lines
 
-    def _fail(message: str, details: Optional[str] = None):
+    def _fail(message: str, details: Optional[List[str]] = None):
         _console(f"[ERROR] {message}", "error")
-        extra = details or _compose_failure_details()
-        if extra:
-            _console(extra, "error")
+        extra_lines = details if details is not None else _compose_failure_details()
+        for line in extra_lines:
+            _console(line, "error")
         _set_status(message, kind="error")
         _ui(lambda: app.stop_status())
         _restore_buttons()
-        messagebox.showerror("Error", message if not extra else f"{message}\n\n{extra}", parent=ventana)
+        summary_text, changed_list, pending_list = _build_key_summary()
+        detail_payload: List[str] = []
+        detail_payload.extend(extra_lines)
+        if changed_list:
+            detail_payload.append("Claves modificadas:")
+            for pair in changed_list:
+                detail_payload.append(f"  - {pair}")
+        pi_section = False
+        for emp in sorted((state.get("pi_tags") or {}).keys()):
+            pi_lines = _build_company_pi_lines(emp)
+            if not pi_lines:
+                continue
+            pi_section = True
+            detail_payload.append(f"{emp}:")
+            for line in pi_lines:
+                detail_payload.append(f"  - {line}")
+        if not pi_section:
+            detail_payload.append("Valores en PI: sin lecturas registradas.")
+        attachments = _collect_output_files(include_delete=True)
+        show_summary_dialog(
+            parent=ventana,
+            mensaje=summary_text or message,
+            title="Cambio de SCADA Key con errores",
+            status="error",
+            details=detail_payload or None,
+            files=attachments or None,
+            show_open_file=bool(attachments),
+        )
 
     def _finish_ok(msg: str, files: Optional[List[str]] = None):
         _restore_buttons()
@@ -432,47 +567,77 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
         if hasattr(app, "refresh_last_upd_hsh_cambiar"):
             _ui(lambda: app.refresh_last_upd_hsh_cambiar())
 
-        # Construir mensaje final enfocado en claves y PI
+        summary_text, changed_list, pending_list = _build_key_summary()
         changed_pairs = list(dict.fromkeys(state.get("changed_pairs") or []))
+
+        # Modo validar: no hacer ver como si se hubiera aplicado el cambio
+        if not state.get("apply"):
+            if changed_pairs:
+                resumen = "Cambios listos para hacer:\n" + "\n".join(f"  - {par}" for par in changed_pairs)
+            else:
+                resumen = "No se detectaron cambios listos para aplicar."
+            attachments = _collect_output_files(include_delete=False)
+            for extra in files or []:
+                if extra and extra not in attachments:
+                    attachments.append(extra)
+            show_summary_dialog(
+                parent=ventana,
+                mensaje=resumen,
+                title="Validacion Cambio de SCADA Key lista",
+                status="success",
+                details=None,
+                files=attachments or None,
+                show_open_file=bool(attachments),
+            )
+            return
+
         pi_reports = state.get("pi_reports", [])
         pi_missing = state.get("pi_missing", [])
 
-        final_lines: List[str] = ["Cambio de SCADA Key completado."]
+        final_lines: List[str] = []
+        if msg:
+            final_lines.extend([line for line in msg.splitlines() if line.strip()])
+
+        detail_payload: List[str] = []
         if changed_pairs:
-            final_lines.append("")
-            final_lines.append("Claves modificadas:")
+            detail_payload.append("Claves modificadas:")
             for pair in changed_pairs:
-                final_lines.append(f"  - {pair}")
+                detail_payload.append(f"  - {pair}")
+        pi_sections_added = False
+        for emp in sorted((state.get("pi_tags") or {}).keys()):
+            pi_lines = _build_company_pi_lines(emp)
+            if not pi_lines:
+                continue
+            pi_sections_added = True
+            detail_payload.append(f"{emp}:")
+            for line in pi_lines:
+                detail_payload.append(f"  - {line}")
+        if not pi_sections_added:
+            detail_payload.append("Valores en PI: sin lecturas registradas.")
+        attachments = _collect_output_files(include_delete=True)
+        for extra in files or []:
+            if extra and extra not in attachments:
+                attachments.append(extra)
 
-        if pi_reports or pi_missing:
-            final_lines.append("")
-            final_lines.append("Resultados PI:")
-            for report in pi_reports:
-                final_lines.append(f"  - {report}")
-            for missing in pi_missing:
-                final_lines.append(f"  - {missing}")
-
-        report_path = state.get("report_excel_path")
-        if report_path:
-            final_lines.append("")
-            final_lines.append(f"Reporte Excel generado: {report_path}")
-
-        attachments = list(files or [])
-        attachments.extend(state.get("query_paths", []))
-        log_file = state.get("log_path")
-        if log_file:
-            attachments.append(log_file)
-        attachments = [path for path in attachments if path]
-        attachments = list(dict.fromkeys(attachments))
-
-        final_message = "\n".join(final_lines)
-        # Mostrar en dialog SOLO
-        show_success_with_open(
+        show_summary_dialog(
             parent=ventana,
-            mensaje=final_message,
+            mensaje=summary_text or "Proceso completado.",
             title="Cambio de SCADA Key completado",
-            files=attachments,
+            status="success",
+            details=detail_payload or None,
+            files=attachments or None,
+            show_open_file=bool(attachments),
         )
+
+        # Al completar correctamente en modo aplicar, habilitar la consulta PI dedicada
+        if state.get("apply"):
+            try:
+                setattr(app, "cambiar_key_ready_for_pi", True)
+                boton_pi = getattr(app, "boton_consultar_pi_cambiar", None)
+                if boton_pi is not None:
+                    boton_pi.config(state="normal")
+            except Exception:
+                pass
 
     def _on_progress_factory(tag: str):
         def _handler(line: str):
@@ -1290,7 +1455,7 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
             _trigger_cleanup_pipeline_guaranteed()
 
     def _run_scada_enable_guaranteed_and_pi():
-        """Fase final : encender bits de keys nuevas y consultar PI basado en TAGS"""
+        """Fase final : encender bits de keys nuevas y (opcionalmente) consultar PI basado en TAGS"""
         _set_status(" Encendiendo bits para las keys nuevas...", indeterminate=True)
         _console(" Encendiendo bits para las keys nuevas en todos los dominios...", "warn")
         resumen_on, fallos_on = _scada_toggle_guaranteed(state["scada_enable"], enable=True)
@@ -1340,57 +1505,9 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
             files = list(dict.fromkeys(state["report_paths"] + state["info_paths"] + state["delete_files"] + state["purge_files"]))
             _finish_ok(msg, files=files)
 
-        def _run_pi_query_guaranteed(resumen_bits: List[str]):
-            tags_map = {emp.upper(): set(tags) for emp, tags in (state.get("pi_tags") or {}).items() if tags}
-            if not tags_map:
-                _console("No hay tags pendientes para consultar en PI.", "info")
-                _finalize_guaranteed(resumen_bits)
-                return
-
-            server_map: Dict[str, Optional[str]] = {}
-            principal = state.get("empresa")
-            if principal and state.get("servidor_principal"):
-                server_map[principal.upper()] = state["servidor_principal"]
-            respaldo_emp = state.get("respaldo")
-            if respaldo_emp and state.get("servidor_respaldo"):
-                server_map[respaldo_emp.upper()] = state["servidor_respaldo"]
-            for emp, srv in (state.get("applied_servers") or {}).items():
-                if srv:
-                    server_map[emp.upper()] = srv
-
-            result = collect_pi_snapshots(
-                app=app,
-                tags_by_empresa=tags_map,
-                server_map=server_map,
-                console_write=lambda msg, tag="info": _console(msg, tag),
-                empresa_principal=principal.upper() if principal else None,
-            )
-
-            state["pi_reports"] = list(dict.fromkeys(result.lines))
-            state["pi_missing"] = list(dict.fromkeys(result.missing_lines))
-            state["pi_snapshot_map"] = result.snapshot_map
-            state["pi_missing_map"] = result.missing_map
-            state["pi_snapshot_messages"] = result.messages
-            state["pi_snapshot_collected_at"] = result.collected_at
-
-            for line in state["pi_reports"]:
-                _console(f"[PI] {line}", "info")
-            for line in state["pi_missing"]:
-                _console(f"[PI-MISSING] {line}", "warn")
-
-            _finalize_guaranteed(resumen_bits)
-        _console("Esperando 10 segundos antes de consultar PI (TAGS)...", "warn")
-
-
-        def _after_wait_guaranteed():
-            _run_pi_query_guaranteed(resumen_on)
-
-
-        if ventana is not None:
-            ventana.after(10000, _after_wait_guaranteed)
-        else:
-            time.sleep(10)
-            _after_wait_guaranteed()
+        # La consulta a PI se ejecuta solo desde un boton dedicado.
+        # Aqui simplemente finalizamos el flujo principal usando el resumen de bits encendidos.
+        _finalize_guaranteed(resumen_on)
 
 
     def _run_pipeline_full_guaranteed():
@@ -1648,4 +1765,131 @@ def ejecutar_cambiar_key_hsh(app, aplicar: bool = False, origin: str | None = No
 
     # Iniciar el flujo completo
     _run_pipeline_full_guaranteed()
+
+
+def ejecutar_consulta_pi_cambiar_hsh(app) -> None:
+    """
+    Ejecuta SOLO la consulta a PI para el flujo de Cambiar SCADA Key,
+    reutilizando el estado recolectado durante la ultima ejecucion del pipeline.
+    """
+    ventana = getattr(app, "ventana", None)
+
+    state = getattr(app, "_cambiar_key_state", None)
+    if not isinstance(state, dict):
+        messagebox.showerror(
+            "Consulta PI - Cambiar SCADA Key",
+            "No hay estado disponible para Cambiar SCADA Key.\n\n"
+            "Ejecuta primero el flujo de cambio de key.",
+            parent=ventana,
+        )
+        return
+
+    pi_tags = state.get("pi_tags") or {}
+    tags_map = {str(emp).upper(): set(tags) for emp, tags in pi_tags.items() if tags}
+    if not tags_map:
+        messagebox.showwarning(
+            "Consulta PI - Cambiar SCADA Key",
+            "No se encontraron tags para consultar en PI.\n\n"
+            "Ejecuta primero el flujo de Cambiar SCADA Key con datos validos.",
+            parent=ventana,
+        )
+        return
+
+    console = getattr(app, "console", None)
+
+    # Mientras se ejecuta un nuevo flujo, la consulta PI dedicada debe reiniciarse
+    try:
+        setattr(app, "cambiar_key_ready_for_pi", False)
+        boton_pi_tmp = getattr(app, "boton_consultar_pi_cambiar", None)
+        if boton_pi_tmp is not None:
+            boton_pi_tmp.config(state="disabled")
+    except Exception:
+        pass
+
+    def _console(msg: str, tag: str = "info") -> None:
+        if console is None:
+            return
+        try:
+            app.ventana.after(0, lambda: console.write(msg, tag))
+        except Exception:
+            pass
+
+    server_map: Dict[str, Optional[str]] = {}
+    principal = state.get("empresa")
+    if principal and state.get("servidor_principal"):
+        server_map[str(principal).upper()] = state["servidor_principal"]  # type: ignore[index]
+    respaldo_emp = state.get("respaldo")
+    if respaldo_emp and state.get("servidor_respaldo"):
+        server_map[str(respaldo_emp).upper()] = state["servidor_respaldo"]  # type: ignore[index]
+    for emp, srv in (state.get("applied_servers") or {}).items():
+        if srv:
+            server_map[str(emp).upper()] = srv
+
+    if not server_map:
+        messagebox.showerror(
+            "Consulta PI - Cambiar SCADA Key",
+            "No se pudo determinar el mapa de servidores para la consulta a PI.\n\n"
+            "Revisa la configuracion de empresas y vuelve a intentar.",
+            parent=ventana,
+        )
+        return
+
+    try:
+        app.start_status("Consultando valores en PI (Cambiar SCADA Key)...", indeterminate=True)
+    except Exception:
+        pass
+
+    try:
+        result = collect_pi_snapshots(
+            app=app,
+            tags_by_empresa=tags_map,
+            server_map=server_map,
+            console_write=lambda msg, tag="info": _console(msg, tag),
+            empresa_principal=str(principal).upper() if principal else None,
+        )
+    finally:
+        try:
+            app.stop_status()
+        except Exception:
+            pass
+
+    # Actualizar el estado compartido con los resultados de PI
+    state["pi_reports"] = list(dict.fromkeys(result.lines))
+    state["pi_missing"] = list(dict.fromkeys(result.missing_lines))
+    state["pi_snapshot_map"] = result.snapshot_map
+    state["pi_missing_map"] = result.missing_map
+    state["pi_snapshot_messages"] = result.messages
+    state["pi_snapshot_collected_at"] = result.collected_at
+
+    for line in state["pi_reports"]:
+        _console(f"[PI] {line}", "info")
+    for line in state["pi_missing"]:
+        _console(f"[PI-MISSING] {line}", "warn")
+
+    total_tags = sum(len(tags) for tags in tags_map.values())
+    empresas = ", ".join(sorted(tags_map.keys()))
+    status = "success" if not result.has_failures else "error"
+
+    resumen = f"Empresas: {empresas}\nTags consultados: {total_tags}"
+
+    details: List[str] = []
+    if result.lines:
+        details.extend(result.lines)
+    if result.missing_lines:
+        if details:
+            details.append("")
+        details.append("Tags sin datos o con errores:")
+        details.extend(result.missing_lines)
+    if not details:
+        details.append("No se recibieron datos desde PI. Revisa la consola y los logs de PI.")
+
+    show_summary_dialog(
+        parent=ventana,
+        mensaje=resumen,
+        title="Consulta PI - Cambiar SCADA Key",
+        status=status,
+        details=details or None,
+        files=None,
+        show_open_file=False,
+    )
 

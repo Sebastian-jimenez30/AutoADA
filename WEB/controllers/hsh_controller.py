@@ -85,6 +85,11 @@ class EliminarResult:
 
 
 last_eliminar_result: Optional[EliminarResult] = None
+last_cambiar_result: Optional[EliminarResult] = None  # reuse structure
+last_cambiar_state: dict[str, Any] = {}
+last_cambiar_pending: bool = False
+last_cambiar_scada_disable: dict[str, dict[str, set[str]]] = {}
+last_cambiar_scada_enable: dict[str, dict[str, set[str]]] = {}
 
 
 def get_empresas() -> Iterable[str]:
@@ -158,6 +163,18 @@ def _run_subprocess_stream(
 
 def _result_line(payload: dict[str, Any]) -> str:
     return f"RESULT::{json.dumps(payload, ensure_ascii=False)}\n"
+
+
+def _summary_line_local(message: str, variant: str = "info", collector: list[str] | None = None) -> str | None:
+    clean = (message or "").strip()
+    if not clean:
+        return None
+    normalized = variant.lower()
+    if normalized not in SUMMARY_VARIANTS:
+        normalized = "info"
+    if collector is not None:
+        collector.append(clean)
+    return f"SUMMARY::{clean}|{normalized}\n"
 
 
 def crear_tags_pipeline(
@@ -1165,6 +1182,672 @@ def load_eliminar_result_preview(sheet: str | None = None, limit: int = 500) -> 
     return base_payload
 
 
+def cambiar_key_pi() -> Generator[str, None, None]:
+    """Consulta PI usando el último estado de Cambiar Key."""
+    global last_cambiar_state, last_cambiar_result
+    state = last_cambiar_state or {}
+    pi_tags = state.get("pi_tags") or {}
+    empresa = state.get("empresa")
+    respaldo = state.get("respaldo")
+
+    yield "Iniciando consulta PI para Cambiar Key...\n"
+    if not pi_tags:
+        yield _result_line({"status": "ERROR", "message": "No hay tags PI para consultar. Ejecuta Cambiar Key primero."})
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield f"Error obteniendo variables del vault: {exc}\n"
+        yield _result_line({"status": "ERROR", "message": "No se pudo construir el entorno para PI."})
+        return
+
+    server_map: dict[str, Optional[str]] = {}
+    for emp in pi_tags.keys():
+        server_map[emp] = SERVER_RESOLVER.generar_server(emp, "CC")
+
+    result = collect_pi_snapshots(
+        env_map=env,
+        base_dir=AUTOADA_DIR,
+        tags_by_empresa={k: set(v) for k, v in pi_tags.items()},
+        server_map=server_map,
+        empresa_principal=empresa,
+    )
+
+    if result.messages:
+        for line in result.messages:
+            yield f"{line}\n"
+
+    # Guardar en last_cambiar_result extra
+    if last_cambiar_result and isinstance(last_cambiar_result.extra, dict):
+        last_cambiar_result.extra["pi_snapshot_map"] = result.snapshot_map
+        last_cambiar_result.extra["pi_missing_map"] = result.missing_map
+        last_cambiar_result.extra["pi_collected_at"] = result.collected_at
+        last_cambiar_result.extra["pi_reports"] = result.lines
+        last_cambiar_result.extra["pi_missing"] = result.missing_lines
+
+    lines = result.lines or []
+    missing = result.missing_lines or []
+    for l in lines:
+        yield f"[PI] {l}\n"
+    for l in missing:
+        yield f"[PI-MISSING] {l}\n"
+
+    status = "SUCCESS" if not result.has_failures else "ERROR"
+    message = "Consulta PI completada" if not result.has_failures else "Consulta PI completada con errores"
+    yield _result_line({"status": status, "message": message})
+
+
+def cambiar_key_pipeline(
+    empresa: str,
+    dominio: str,
+    archivo_path: str,
+    archivo_nombre: str | None,
+    aplicar: bool,
+) -> Generator[str, None, None]:
+    """Flujo Cambiar Key para web (validar/aplicar, prepara PI y archivos)."""
+    global last_cambiar_result, last_cambiar_state, last_cambiar_pending, last_cambiar_scada_disable, last_cambiar_scada_enable
+
+    extra_messages: list[str] = []
+
+    def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_cambiar_result
+        last_cambiar_result = EliminarResult(  # reutilizamos la estructura
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line_local(message, variant, extra_messages)
+        if line:
+            yield line
+
+    empresa_detected, respaldo_detected = detect_empresas_por_host()
+    empresa = empresa_detected
+    respaldo = respaldo_detected
+    dominio = "CC"
+    archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
+
+    yield f"Iniciando proceso Cambiar Key HSH para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
+    yield from _yield_summary(f"{empresa}: proceso iniciado")
+
+    if not empresa:
+        payload = {"status": "ERROR", "message": "Debes seleccionar una empresa válida."}
+        _store_result(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    if not archivo_path or not os.path.isfile(archivo_path):
+        payload = {"status": "ERROR", "message": "No se pudo acceder al archivo de entrada."}
+        _store_result(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield f"Error obteniendo variables del vault: {exc}\n"
+        message = "No se pudo construir el entorno. Verifica que el vault esté desbloqueado."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
+    servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
+
+    if not servidor_principal:
+        message = "No se pudo resolver el servidor principal para la empresa detectada."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+    if aplicar and respaldo and not servidor_respaldo:
+        message = "No se pudo resolver el servidor respaldo para la empresa detectada."
+        _store_result("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    # Sincronización previa
+    pre_commands: list[tuple[str, list[str]] | None] = [
+        (
+            "IMPORT-PRINCIPAL",
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+        ),
+        (
+            "IMPORT-RESPALDO",
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+        (
+            "CONVERT-SCA-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        (
+            "CONVERT-HSH-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+    ]
+
+    def _stream_script(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_script(label, cmd)
+        if rc_pre != 0:
+            target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
+            message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+            yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
+            _store_result("ERROR", message)
+            yield _result_line({"status": "ERROR", "message": message})
+            return
+    yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
+
+    # Ejecutar script principal (una vez, indicando respaldo)
+    cmd = build_cmd("scripts.hsh_cambiar_key", empresa, "--input", archivo_path)
+    if respaldo:
+        cmd += ["--respaldo", respaldo]
+    if aplicar:
+        cmd.append("--apply")
+        cmd += ["--server", servidor_principal]
+        if respaldo and servidor_respaldo:
+            cmd += ["--server-respaldo", servidor_respaldo]
+
+    report_paths: list[str] = []
+    info_paths: list[str] = []
+    delete_files: list[str] = []
+    purge_files: list[str] = []
+    pi_tags_map: dict[str, set[str]] = {}
+    pi_reports: list[str] = []
+    pi_missing: list[str] = []
+    scada_disable_map: dict[str, dict[str, set[str]]] = {}
+    scada_enable_map: dict[str, dict[str, set[str]]] = {}
+
+    def _handle_marker(raw: str):
+        line = (raw or "").strip()
+        if not line:
+            return
+        if line.startswith("REPORT_PATH:"):
+            report_paths.append(line.split(":", 1)[1].strip())
+        elif line.startswith("INFO_PATH:"):
+            info_paths.append(line.split(":", 1)[1].strip())
+        elif line.startswith("DELETE_FILE:"):
+            delete_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("PURGE_FILE:"):
+            purge_files.append(line.split(":", 1)[1].strip())
+        elif line.startswith("PI_TAG:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                try:
+                    emp_part, tag_part = detalle.split("|", 1)
+                    emp_key = emp_part.strip().upper()
+                    tag_val = tag_part.strip()
+                    if tag_val:
+                        pi_tags_map.setdefault(emp_key, set()).add(tag_val)
+                except Exception:
+                    pass
+        elif line.startswith("PI_REPORT:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                pi_reports.append(detalle)
+        elif line.startswith("PI_MISSING:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                pi_missing.append(detalle)
+        elif line.startswith("SCADA_DISABLE:"):
+            detalle = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in detalle.split("|")]
+            if len(parts) >= 4:
+                emp_sc, dom_sc, base, bit_spec = parts[:4]
+                emp_u = emp_sc.upper()
+                try:
+                    bit = int(bit_spec.split(":")[-1])
+                except Exception:
+                    bit = 1
+                suffix = "ESTIMATED" if bit == 2 else "VALUE"
+                scada_disable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+        elif line.startswith("SCADA_ENABLE:"):
+            detalle = line.split(":", 1)[1].strip()
+            parts = [p.strip() for p in detalle.split("|")]
+            if len(parts) >= 4:
+                emp_sc, dom_sc, base, bit_spec = parts[:4]
+                emp_u = emp_sc.upper()
+                try:
+                    bit = int(bit_spec.split(":")[-1])
+                except Exception:
+                    bit = 1
+                suffix = "ESTIMATED" if bit == 2 else "VALUE"
+                scada_enable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+        elif line.startswith("SUMMARY::"):
+            try:
+                payload = line.split("SUMMARY::", 1)[1]
+                if "|" in payload:
+                    msg, var = payload.rsplit("|", 1)
+                    msg_clean = msg.strip()
+                    var_clean = var.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        yield f"SUMMARY::{msg_clean}|{var_clean}\n"
+                else:
+                    msg_clean = payload.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        yield f"SUMMARY::{msg_clean}|info\n"
+            except Exception:
+                return
+
+    yield f"Ejecutando script de cambio de key ({empresa})...\n"
+    rc_script: int | None = None
+    stream_script = _run_subprocess_stream(cmd, "CAMBIAR-KEY", env=env, cwd=AUTOADA_DIR)
+    try:
+        while True:
+            chunk = next(stream_script)
+            raw = chunk
+            if "[" in raw and "]" in raw:
+                raw = raw.split("]", 1)[1]
+            marker_line = raw.strip()
+            # Emitir summaries si aplica
+            if marker_line.startswith("SUMMARY::"):
+                yielded = _handle_marker(marker_line)
+                if yielded:
+                    for item in yielded:
+                        yield item
+            else:
+                _handle_marker(marker_line)
+            yield chunk
+    except StopIteration as stop:
+        rc_script = stop.value if isinstance(stop.value, int) else 0
+
+    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
+
+    if rc_script != 0:
+        message = f"El script hsh_cambiar_key finalizó con errores (rc={rc_script})."
+        yield from _yield_summary(f"{empresa}: cambio falló", "error")
+        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+        return
+
+    # Si es aplicar y se generaron archivos delete/purge, pasamos a estado pendiente de confirmación
+    if aplicar and (delete_files or purge_files):
+        # Apagar SCADA antes de pedir confirmación
+        if scada_disable_map:
+            msgs_off, fail_off = apply_scada_updates(
+                inserted_keys_map=scada_disable_map,
+                env=env,
+                autoada_dir=AUTOADA_DIR,
+                enable=False,
+                log_filename="scada_cambiar_key_off.log",
+            )
+            for msg in msgs_off:
+                yield f"[SCADA-OFF] {msg}\n"
+            if fail_off:
+                message = "Apagado SCADA con errores. Revisa consola."
+                _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+                yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+                return
+
+        last_cambiar_state = {
+            "empresa": empresa,
+            "respaldo": respaldo,
+            "excel_path": archivo_path,
+            "servidor_principal": servidor_principal,
+            "servidor_respaldo": servidor_respaldo,
+            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+            "delete_files": delete_files,
+            "purge_files": purge_files,
+            "report_paths": report_paths,
+            "info_paths": info_paths,
+        }
+        last_cambiar_scada_disable = scada_disable_map
+        last_cambiar_scada_enable = scada_enable_map
+        last_cambiar_pending = True
+        payload_pending = {
+            "status": "PENDING_CONFIRM",
+            "message": "Pendiente confirmación de ejecución de Delete/Purge en HSH.",
+            "files": files_collected,
+            "confirm_needed": True,
+            "delete_files": delete_files,
+            "purge_files": purge_files,
+        }
+        yield "CONFIRM_DELETE::pending\n"
+        _store_result(payload_pending["status"], payload_pending["message"], files=files_collected, extra=payload_pending)
+        yield _result_line(payload_pending)
+        return
+
+    status_msg = "Validación completada." if not aplicar else "Cambio de key completado."
+    yield from _yield_summary(f"{empresa}: {status_msg}", "success")
+    extra = {
+        "details": extra_messages,
+        "report_path": report_paths[0] if report_paths else None,
+        "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+        "pi_reports": pi_reports,
+        "pi_missing": pi_missing,
+        "scada_on": scada_enable_map,
+        "scada_off": scada_disable_map,
+    }
+    last_cambiar_state = {
+        "empresa": empresa,
+        "respaldo": respaldo,
+        "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+    }
+    last_cambiar_pending = False
+    _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
+    yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
+
+
+def get_last_cambiar_result() -> EliminarResult | None:
+    return last_cambiar_result
+
+def is_cambiar_pending() -> bool:
+    return bool(last_cambiar_pending)
+
+def cleanup_cambiar_file():
+    global last_cambiar_state
+    path = last_cambiar_state.get("excel_path")
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+def load_cambiar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_cambiar_result
+    if result is None:
+        return None
+
+    def _normalize_path(path: str) -> str:
+        p = os.path.normpath(path)
+        if not os.path.isabs(p):
+            p = os.path.normpath(os.path.join(AUTOADA_DIR, p))
+        return p
+
+    report_path = None
+    if isinstance(result.extra, dict):
+        report_path = result.extra.get("report_path")
+    if not report_path:
+        for path in result.files:
+            if str(path).lower().endswith(".xlsx"):
+                report_path = path
+                break
+    if report_path:
+        report_path = _normalize_path(report_path)
+        if not os.path.isfile(report_path):
+            report_path = None
+
+    csv_files: list[str] = []
+    for path in result.files:
+        if str(path).lower().endswith(".csv"):
+            norm = _normalize_path(path)
+            if os.path.isfile(norm):
+                csv_files.append(norm)
+        if str(path).lower().endswith(".txt"):
+            norm = _normalize_path(path)
+            if os.path.isfile(norm):
+                csv_files.append(norm)
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "pi_reports": result.extra.get("pi_reports", []) if isinstance(result.extra, dict) else [],
+        "pi_missing": result.extra.get("pi_missing", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+        "report_path": report_path,
+    }
+
+    datasets: dict[str, dict[str, Any]] = {}
+    download_map: dict[str, str] = {}
+
+    if report_path:
+        try:
+            workbook = load_workbook(report_path, read_only=True, data_only=True)
+        except Exception:
+            workbook = None
+        if workbook:
+            try:
+                for sheet_name in workbook.sheetnames:
+                    worksheet = workbook[sheet_name]
+                    rows_iter = worksheet.iter_rows(values_only=True)
+                    try:
+                        headers_raw = next(rows_iter)
+                    except StopIteration:
+                        headers_raw = []
+                    headers = [str(h or "") for h in headers_raw]
+                    rows_list = []
+                    total_rows = 0
+                    has_more_flag = False
+                    for row in rows_iter:
+                        total_rows += 1
+                        row_dict = {}
+                        for idx, header in enumerate(headers):
+                            row_dict[header] = row[idx] if idx < len(row) else None
+                        if total_rows <= limit:
+                            rows_list.append(row_dict)
+                        else:
+                            has_more_flag = True
+                            break
+                    datasets[sheet_name] = {
+                        "columns": headers,
+                        "rows": rows_list,
+                        "total": total_rows,
+                        "has_more": has_more_flag,
+                    }
+                workbook.close()
+            except Exception:
+                try:
+                    workbook.close()
+                except Exception:
+                    pass
+
+    for csv_path in csv_files:
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="ignore") as fh:
+                lines = fh.readlines()
+        except Exception:
+            lines = []
+        rows_list = []
+        total_rows = 0
+        has_more_flag = False
+        for line in lines:
+            total_rows += 1
+            if total_rows <= limit:
+                rows_list.append({"line": line.rstrip("\n")})
+            else:
+                has_more_flag = True
+                break
+        sheet_name = os.path.basename(csv_path)
+        datasets[sheet_name] = {
+            "columns": ["line"],
+            "rows": rows_list,
+            "total": total_rows,
+            "has_more": has_more_flag,
+        }
+        download_map[sheet_name] = f"/hsh/cambiar/result/download?path={quote(csv_path)}"
+
+    sheet_names = list(datasets.keys())
+    active_sheet = sheet or (sheet_names[0] if sheet_names else None)
+
+    if active_sheet and active_sheet in datasets:
+        payload = datasets[active_sheet]
+    else:
+        active_sheet = None
+        payload = {"columns": [], "rows": [], "total": 0, "has_more": False}
+
+    base_payload.update(
+        {
+            "sheets": sheet_names,
+            "active_sheet": active_sheet,
+            "columns": payload.get("columns", []),
+            "rows": payload.get("rows", []),
+            "total": payload.get("total", 0),
+            "has_more": payload.get("has_more", False),
+            "download_url": download_map.get(active_sheet) if active_sheet else None,
+        }
+    )
+    return base_payload
+
+
+def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
+    """Reimporta/convierte y ejecuta --check-only después de que el usuario confirma delete/purge."""
+    global last_cambiar_state, last_cambiar_result, last_cambiar_pending, last_cambiar_scada_enable, last_cambiar_scada_disable
+    state = last_cambiar_state or {}
+    if not last_cambiar_pending:
+        yield _result_line({"status": "ERROR", "message": "No hay flujo pendiente de confirmación."})
+        return
+
+    empresa = state.get("empresa")
+    respaldo = state.get("respaldo")
+    archivo_path = state.get("excel_path")
+    servidor_principal = state.get("servidor_principal")
+    servidor_respaldo = state.get("servidor_respaldo")
+    report_paths = state.get("report_paths", [])
+    info_paths = state.get("info_paths", [])
+    delete_files = state.get("delete_files", [])
+    purge_files = state.get("purge_files", [])
+    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
+
+    if not empresa or not archivo_path or not os.path.isfile(archivo_path):
+        yield _result_line({"status": "ERROR", "message": "No se encontró el archivo o estado para confirmar."})
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield f"Error obteniendo variables del vault: {exc}\n"
+        yield _result_line({"status": "ERROR", "message": "No se pudo construir el entorno para confirmar."})
+        return
+
+    pre_commands: list[tuple[str, list[str]] | None] = [
+        (
+            "IMPORT-PRINCIPAL",
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+        ),
+        (
+            "IMPORT-RESPALDO",
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+        (
+            "CONVERT-SCA-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        (
+            "CONVERT-HSH-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+    ]
+
+    def _stream_script(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_script(label, cmd)
+        if rc_pre != 0:
+            message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+            yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+            return
+
+    # Ejecutar check-only
+    cmd = build_cmd("scripts.hsh_cambiar_key", empresa, "--input", archivo_path, "--check-only")
+    if respaldo:
+        cmd += ["--respaldo", respaldo]
+    if servidor_principal:
+        cmd += ["--server", servidor_principal]
+    if respaldo and servidor_respaldo:
+        cmd += ["--server-respaldo", servidor_respaldo]
+
+    rc_script = yield from _stream_script("CAMBIAR-KEY-CHECK", cmd)
+    if rc_script != 0:
+        # Sigue pendiente: reemitir confirmación para que el usuario vuelva a ejecutar delete/purge
+        last_cambiar_pending = True
+        payload_pending = {
+            "status": "PENDING_CONFIRM",
+            "message": "Aún se detectan claves/bits tras Delete/Purge. Ejecuta nuevamente y confirma.",
+            "files": files_collected,
+            "confirm_needed": True,
+            "delete_files": delete_files,
+            "purge_files": purge_files,
+        }
+        yield "CONFIRM_DELETE::pending\n"
+        yield _result_line(payload_pending)
+        return
+
+    # Encender SCADA (si tenemos mapa)
+    enable_map = last_cambiar_scada_enable or {}
+    disable_map = last_cambiar_scada_disable or {}
+    messages_scada_on: list[str] = []
+    scada_fail = False
+    if enable_map:
+        msgs, has_fail = apply_scada_updates(
+            inserted_keys_map=enable_map,
+            env=env,
+            autoada_dir=AUTOADA_DIR,
+            enable=True,
+            log_filename="scada_cambiar_key_on.log",
+        )
+        messages_scada_on.extend(msgs)
+        scada_fail = scada_fail or has_fail
+
+    if scada_fail:
+        yield _result_line({"status": "ERROR", "message": "Encendido SCADA con errores.", "files": files_collected, "details": messages_scada_on})
+        return
+
+    last_cambiar_pending = False
+    status_msg = "Verificación completada. SCADA encendido. Continúa con PI si aplica."
+    if last_cambiar_result:
+        last_cambiar_result.status = "SUCCESS"
+        last_cambiar_result.message = status_msg
+    payload_success = {
+        "status": "SUCCESS",
+        "message": status_msg,
+        "files": files_collected,
+        "details": messages_scada_on,
+    }
+    yield _result_line(payload_success)
 def eliminar_tags_pipeline(
     empresa: str,
     dominio: str,

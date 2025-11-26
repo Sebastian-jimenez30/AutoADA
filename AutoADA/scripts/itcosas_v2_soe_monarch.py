@@ -318,7 +318,10 @@ def main():
                 return None
 
         df["event"] = pd.to_numeric(df.apply(_map_event, axis=1), errors="coerce").astype("Int64")
-        df["time"] = df["time"].astype(str) + "." + df["milli_secs"].astype(int).astype(str).str.zfill(3)
+        # Normalizar tiempo con milisegundos (evita concatenar si ya trae fracciones)
+        df["time"] = pd.to_datetime(df["time"], errors="coerce")
+        df["time"] = df["time"] + pd.to_timedelta(df.get("milli_secs", 0).fillna(0).astype(int), unit="ms")
+        df["time"] = df["time"].dt.strftime("%Y-%m-%d %H:%M:%S.%f").str.slice(0, -3)
 
         preferred = [
             "time", "milli_secs", "station_name", "point_name",

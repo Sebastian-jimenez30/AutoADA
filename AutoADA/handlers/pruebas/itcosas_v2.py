@@ -41,6 +41,10 @@ def ejecutar_pruebas_itcosas_v2_pipeline(app):
     if not empresa or empresa == 'Empresa...':
         messagebox.showerror('Error', 'Selecciona la empresa.')
         return
+    servidor = getattr(app, 'generar_server', lambda *a, **k: None)(empresa, 'CC')
+    if not servidor:
+        messagebox.showerror('Error', 'No se pudo resolver el servidor SCADA para la empresa seleccionada.')
+        return
     checklist = getattr(app, 'pyp_checklist_file', None)
     soe_se = getattr(app, 'pyp_soe_se_file', None)
     if not (checklist and os.path.isfile(checklist) and soe_se and os.path.isfile(soe_se)):
@@ -61,24 +65,12 @@ def ejecutar_pruebas_itcosas_v2_pipeline(app):
     except Exception:
         messagebox.showerror('Error', 'Fecha u hora con formato invalido.')
         return
-    raw_station_sel = (getattr(app, 'pyp_station_selected', None).get() if hasattr(app, 'pyp_station_selected') else '') or ''
-    station_sel = raw_station_sel.strip()
     station_names = getattr(app, 'pyp_station_names', []) if hasattr(app, 'pyp_station_names') else []
-    placeholder_values = {'estacion...', 'estacion...'}
-    if station_sel and station_sel.lower() not in placeholder_values:
-        stations = [station_sel]
-    else:
-        stations = [(s or '').strip() for s in station_names if (s or '').strip()]
-    seen_stations = set()
-    deduped: list[str] = []
-    for st in stations:
-        if st not in seen_stations:
-            seen_stations.add(st)
-            deduped.append(st)
-    stations = deduped
+    stations = [(s or '').strip() for s in station_names if (s or '').strip()]
+    # Siempre consultar todas: si no hay lista, usar '%'
+    stations = list(dict.fromkeys(stations))  # dedupe
     if not stations:
-        messagebox.showerror('Faltan estaciones', 'No hay estaciones definidas (ni seleccionada ni en checklist). Para v2 se requiere HIS; agrega una estacion o completa el checklist con Station Name.')
-        return
+        stations = ["%"]
     env = app.secure_env()
     outdir = os.path.join(output_root(), 'out', 'pruebas')
     os.makedirs(outdir, exist_ok=True)
@@ -177,8 +169,6 @@ def ejecutar_pruebas_itcosas_v2_pipeline(app):
             _check_and_maybe_continue()
             return
         cmd_args = [m['soe_monarch_v2'], empresa, f'--scada={scada_dir}', f'--his={his_path}', f'--outdir={outdir}', f'--checklist={checklist}']
-        if stations:
-            cmd_args.append(f'--station={stations[0]}')
         cmd = build_cmd(*cmd_args)
         console(f">> CMD[SOE_MONARCH_V2]: {' '.join(map(str, cmd))}", 'warn')
         app.tasks.run_subprocess(cmd, env=env, cwd=project_root(), on_progress=_on_progress_factory(app, prefix='[SOE_MONARCH_V2] '), on_done=lambda rc: _on_done_soe_monarch_v2(0 if rc == 0 else 1))
@@ -209,6 +199,51 @@ def ejecutar_pruebas_itcosas_v2_pipeline(app):
             _ui(app, lambda: app.error_status('Checklist v2 fallo.'))
             _final_failure_dialog()
 
+    def _start_pipeline_after_sync():
+        console(">> Import/convert OK. Iniciando pipeline itcosas v2...", 'info')
+        _run_his(stations)
+        _run_soe_local_v2()
+
+    def _after_convert(rc: int):
+        if rc != 0:
+            state['his'] = state['soe_local'] = state['soe_monarch'] = state['checklist'] = 1
+            _ui(app, lambda: app.error_status('Conversion SCADA fallo.'))
+            messagebox.showerror('Error', 'Conversion SCADA fallo. Revisa la consola.', parent=app.ventana)
+            return
+        _ui(app, lambda: app.success_status('SCADA convertido'))
+        _start_pipeline_after_sync()
+
+    def _run_convert_pruebas():
+        cmd = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+        console(f">> CMD[CONVERTIR SCADA]: {' '.join(map(str, cmd))}", 'warn')
+        app.tasks.run_subprocess(
+            cmd,
+            env=env,
+            cwd=project_root(),
+            on_progress=_on_progress_factory(app, prefix='[CONVERTIR] '),
+            on_done=lambda rc: _after_convert(0 if rc == 0 else 1),
+        )
+
+    def _after_import(rc: int):
+        if rc != 0:
+            state['his'] = state['soe_local'] = state['soe_monarch'] = state['checklist'] = 1
+            _ui(app, lambda: app.error_status('Importacion SCADA fallo.'))
+            messagebox.showerror('Error', 'Importacion SCADA fallo. Revisa la consola.', parent=app.ventana)
+            return
+        _ui(app, lambda: app.success_status('SCADA importado'))
+        _run_convert_pruebas()
+
+    def _run_import_pruebas():
+        cmd = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp")
+        console(f">> CMD[IMPORTAR SCADA]: {' '.join(map(str, cmd))}", 'warn')
+        app.tasks.run_subprocess(
+            cmd,
+            env=env,
+            cwd=project_root(),
+            on_progress=_on_progress_factory(app, prefix='[IMPORTAR] '),
+            on_done=lambda rc: _after_import(0 if rc == 0 else 1),
+        )
+
     def _check_and_maybe_continue():
         if state['soe_monarch'] is None:
             if state['soe_local'] == 0 and state['his'] == 0:
@@ -231,8 +266,8 @@ def ejecutar_pruebas_itcosas_v2_pipeline(app):
 
     def _final_failure_dialog():
         messagebox.showerror('Pipeline v2 incompleto', 'Uno o mas pasos fallaron. Revisa la consola para mas detalles.', parent=app.ventana)
-    _run_soe_local_v2()
-    _run_his(stations)
+    # Sincronizacion obligatoria de SCADA (importar/convertir) antes de ejecutar el pipeline
+    _run_import_pruebas()
 
 __all__ = ["ejecutar_pruebas_itcosas_v2_pipeline"]
 

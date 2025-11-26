@@ -276,10 +276,9 @@ def main():
         sys.exit(2)
 
     table = _table_name(fecha)
+    data_csv = _data_path(args.outdir)
     station_clause, station_params = _station_clause(station_filters)
     sql = _select_sql(table, station_clause)
-    data_csv = _data_path(args.outdir)
-    sql_params = tuple(station_params + [t0, t1])
 
     # Hosts: CLI --host o entorno HIS_HOSTS (coma-separados)
     if args.host:
@@ -314,19 +313,28 @@ def main():
             else:
                 write_header_next = not os.path.exists(data_csv)
 
-            if args.split_by_station:
+            # Ejecutar una consulta por estacion cuando hay multiples patrones (o --split-by-station),
+            # consolidando en el mismo data.csv con header solo en la primera corrida.
+            filters_to_run = station_filters if (len(station_filters) > 1 or args.split_by_station) else [",".join(station_filters)]
+            total_rows_all = 0
+            for filt in filters_to_run:
+                # Recalcular clausula/params para cada filtro individual
+                clause, params = _station_clause(_parse_station_filters(filt))
+                sql_current = _select_sql(table, clause)
+                sql_params = tuple(params + [t0, t1])
+                rows = _dump_query_to_csv(cur, sql_current, sql_params, data_csv, write_header=write_header_next)
+                total_rows_all += rows
+                write_header_next = False
                 Logger.write_log().log_all(
-                    "warn",
-                    "--split-by-station ignorada (consulta unica)",
+                    "info",
+                    f"Exportacion estacion({filt}) -> {rows} filas",
                     logger_console,
                     logger,
                 )
 
-            rows = _dump_query_to_csv(cur, sql, sql_params, data_csv, write_header=write_header_next)
-            write_header_next = False
             Logger.write_log().log_all(
                 "info",
-                f"Exportacion lista (1 consulta): {rows} filas -> {data_csv}",
+                f"Exportacion consolidada: {total_rows_all} filas -> {data_csv}",
                 logger_console,
                 logger,
             )

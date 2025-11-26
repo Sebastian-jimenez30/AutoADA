@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+from typing import List, Set, Tuple
 
-from .common import build_cmd, messagebox, show_success_with_open
+from .common import build_cmd, load_workbook, messagebox, show_summary_dialog
 
 def ejecutar_validacion_hsh(app):
     """
@@ -101,6 +102,82 @@ def ejecutar_validacion_hsh(app):
 
         return _inner
 
+    def _collect_validation_counts(xlsx_path: str) -> Tuple[int, int]:
+
+        if load_workbook is None or not os.path.exists(xlsx_path):
+
+            return (0, 0)
+
+        try:
+
+            wb = load_workbook(xlsx_path, read_only=True, data_only=True)
+
+        except Exception:
+
+            return (0, 0)
+
+        try:
+
+            header_row = next(
+                wb.active.iter_rows(min_row=1, max_row=1, values_only=True))
+
+        except StopIteration:
+
+            wb.close()
+
+            return (0, 0)
+
+        headers = [str(value or "").strip().lower() for value in header_row]
+
+        header_map = {name: idx for idx, name in enumerate(headers) if name}
+
+        key_idx = header_map.get("key")
+
+        etiqueta_idx = header_map.get("etiqueta")
+
+        all_keys: Set[str] = set()
+
+        invalid_keys: Set[str] = set()
+
+        for row_number, row in enumerate(wb.active.iter_rows(min_row=2, values_only=True), start=2):
+
+            if not row:
+
+                continue
+
+            key_value = ""
+
+            if key_idx is not None and key_idx < len(row):
+
+                key_value = str(row[key_idx] or "").strip()
+
+            if not key_value:
+
+                key_value = f"ROW#{row_number}"
+
+            etiqueta_value = ""
+
+            if etiqueta_idx is not None and etiqueta_idx < len(row):
+
+                etiqueta_value = str(row[etiqueta_idx] or
+                                     "").strip().upper()
+
+            all_keys.add(key_value)
+
+            if etiqueta_value in {"ERROR", "CRITICAL"}:
+
+                invalid_keys.add(key_value)
+
+        wb.close()
+
+        total_keys = len(all_keys)
+
+        invalid_count = len(invalid_keys)
+
+        valid_count = max(total_keys - invalid_count, 0)
+
+        return valid_count, invalid_count
+
     def _fin(rc: int):
 
         def _end():
@@ -117,67 +194,77 @@ def ejecutar_validacion_hsh(app):
 
                 app.success_status("Validacion lista")
 
-                # REEMPLAZADO: messagebox por success dialog
+                archivos_resultado: List[str] = []
 
-                if os.path.exists(nombre_archivo):
+                if os.path.exists(out_dir):
 
-                    # Buscar todos los archivos de validacion en el directorio
+                    for archivo in os.listdir(out_dir):
 
-                    archivos_resultado = []
+                        if archivo.endswith('.xlsx') and 'Validacion' in archivo:
 
-                    if os.path.exists(out_dir):
+                            archivos_resultado.append(
+                                os.path.join(out_dir, archivo))
 
-                        for archivo in os.listdir(out_dir):
+                if not archivos_resultado and os.path.exists(nombre_archivo):
 
-                            if archivo.endswith('.xlsx') and 'Validacion' in archivo:
+                    archivos_resultado = [nombre_archivo]
 
-                                archivos_resultado.append(
-                                    os.path.join(out_dir, archivo))
+                validados, fallidos = _collect_validation_counts(nombre_archivo)
 
-                    # Si no encontramos archivos con patrn, usar el archivo esperado
+                resumen = f"Unifilares validados: {validados}\nUnifilares con alertas: {fallidos}"
 
-                    if not archivos_resultado and os.path.exists(nombre_archivo):
+                detalles: List[str] = [
+                    f"Empresa: {empresa}",
+                ]
 
-                        archivos_resultado = [nombre_archivo]
+                if respaldo:
 
-                    mensaje = f"Validacion HSH lista para {empresa}."
+                    detalles.append(f"Respaldo: {respaldo}")
 
-                    if respaldo:
+                detalles.append(f"Directorio: {out_dir}")
 
-                        mensaje += f"\nIncluye validacion con {respaldo}."
+                if not archivos_resultado:
 
-                    show_success_with_open(
+                    detalles.append(
+                        "No se encontraron archivos de salida en la validacion.")
 
-                        parent=app.ventana,
+                show_summary_dialog(
 
-                        mensaje=mensaje,
+                    parent=app.ventana,
 
-                        title="Validacion HSH lista",
+                    mensaje=resumen,
 
-                        files=archivos_resultado
+                    title="Validacion HSH lista",
 
-                    )
+                    status="success",
 
-                else:
+                    details=detalles,
 
-                    # Fallback si no se encuentra el archivo esperado
+                    files=archivos_resultado or None,
 
-                    messagebox.showinfo(
+                    show_open_file=bool(archivos_resultado),
 
-                        "Validacion lista",
-
-                        f"Validacion HSH lista para {empresa}.\nRevisa la carpeta de salida.",
-
-                        parent=app.ventana
-
-                    )
+                )
 
             else:
 
-                app.error_status("La validacion termino con errores.")
+                error_msg = "La validacion termino con errores."
 
-                messagebox.showerror(
-                    "Error", "La validacion termino con errores.")
+                app.error_status(error_msg)
+
+                show_summary_dialog(
+
+                    parent=app.ventana,
+
+                    mensaje=error_msg,
+
+                    title="Validacion HSH con errores",
+
+                    status="error",
+
+                    details=[error_msg],
+
+                )
 
         _ui(_end)
 
