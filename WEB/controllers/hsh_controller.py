@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Set, Tuple
 from urllib.parse import quote
 
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 import pandas as pd
 
 from services.hsh_services import (
@@ -1495,6 +1495,69 @@ def cambiar_key_pipeline(
             if fallback_report:
                 report_paths.append(fallback_report)
                 files_collected = sorted({*files_collected, fallback_report})
+            else:
+                # Generar un Excel de verificación con formato: Key actual / Key nueva y estados
+                try:
+                    out_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
+                    out_dir.mkdir(parents=True, exist_ok=True)
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    report_path = out_dir / f"reporte_cambiar_validacion_{timestamp}.xlsx"
+                    wb = Workbook()
+                    ws = wb.active
+                    ws.title = "Verificacion"
+
+                    # Construir pares usando mapas SCADA si existen; de lo contrario, usar mensajes
+                    keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
+                    keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
+                    pairs = []
+                    for idx in range(max(len(keys_old), len(keys_new))):
+                        old_key = keys_old[idx] if idx < len(keys_old) else ""
+                        new_key = keys_new[idx] if idx < len(keys_new) else ""
+                        pairs.append((old_key, new_key))
+
+                    if not pairs:
+                        # Si no hay pares, crear una fila básica con mensaje
+                        ws.append(["detalle"])
+                        for msg in (extra_messages or ["Validación completada."]):
+                            ws.append([msg])
+                    else:
+                        row_cursor = 1
+                        for old_key, new_key in pairs:
+                            ws.cell(row=row_cursor, column=1, value="Key actual")
+                            ws.cell(row=row_cursor, column=2, value=old_key)
+                            ws.cell(row=row_cursor, column=3, value="Key nueva")
+                            ws.cell(row=row_cursor, column=4, value=new_key)
+                            row_cursor += 1
+
+                            ws.cell(row=row_cursor, column=1, value="Scada")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=3, value="Scada")
+                            ws.cell(row=row_cursor, column=4, value="existe" if new_key else "")
+                            row_cursor += 1
+
+                            ws.cell(row=row_cursor, column=1, value="LookupTable")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=3, value="LookupTable")
+                            ws.cell(row=row_cursor, column=4, value="no existe")
+                            row_cursor += 1
+
+                            ws.cell(row=row_cursor, column=1, value="Groups")
+                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "")
+                            ws.cell(row=row_cursor, column=3, value="Groups")
+                            ws.cell(row=row_cursor, column=4, value="no existe")
+                            row_cursor += 1
+
+                            ws.cell(row=row_cursor, column=1, value="Bit")
+                            ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "")
+                            ws.cell(row=row_cursor, column=3, value="Bit")
+                            ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "")
+                            row_cursor += 2  # espacio entre bloques
+
+                    wb.save(report_path)
+                    report_paths.append(str(report_path))
+                    files_collected = sorted({*files_collected, str(report_path)})
+                except Exception:
+                    pass
         status_msg = "Validación completada."
         yield from _yield_summary(f"{empresa}: {status_msg}", "success")
         extra = {
