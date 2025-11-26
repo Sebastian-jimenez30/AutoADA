@@ -1361,6 +1361,17 @@ def cambiar_key_pipeline(
             return
     yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
 
+    # contenedores de marcadores
+    report_paths: list[str] = []
+    info_paths: list[str] = []
+    delete_files: list[str] = []
+    purge_files: list[str] = []
+    pi_tags_map: dict[str, set[str]] = {}
+    pi_reports: list[str] = []
+    pi_missing: list[str] = []
+    scada_disable_map: dict[str, dict[str, set[str]]] = {}
+    scada_enable_map: dict[str, dict[str, set[str]]] = {}
+
     def _handle_marker_local(raw: str):
         line = (raw or "").strip()
         if not line:

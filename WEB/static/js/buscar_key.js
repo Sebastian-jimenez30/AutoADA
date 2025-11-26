@@ -624,6 +624,8 @@ document.addEventListener("DOMContentLoaded", () => {
         resolve(ok);
         return;
       }
+      confirmModal.classList.remove("is-visible");
+      confirmList.innerHTML = "";
       confirmList.innerHTML = "";
       if (Array.isArray(files) && files.length) {
         files.forEach((file) => {
@@ -644,6 +646,15 @@ document.addEventListener("DOMContentLoaded", () => {
       confirmAccept.onclick = () => cleanup(true);
       confirmCancel.onclick = () => cleanup(false);
     });
+
+  const hideConfirmModal = () => {
+    if (confirmModal) {
+      confirmModal.classList.remove("is-visible");
+    }
+    if (confirmList) {
+      confirmList.innerHTML = "";
+    }
+  };
 
   const handleStream = async (response, allowConfirm = true) => {
     const reader = response.body.getReader();
@@ -853,6 +864,7 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const launchRun = async () => {
+    hideConfirmModal();
     activatePanel("summary");
     resetResultsView();
     setStatus("Ejecutando...");
