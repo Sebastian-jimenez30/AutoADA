@@ -618,28 +618,33 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const showConfirmModal = (files) =>
     new Promise((resolve) => {
+      // Si por alguna razón el modal no existe, usa confirm() nativo como fallback
       if (!confirmModal || !confirmAccept || !confirmCancel || !confirmList) {
         const ok = window.confirm("Confirma que ejecutaste los archivos Delete/Purge en HSH?");
         resolve(ok);
         return;
       }
 
+      // PREPARAR LISTA DE ARCHIVOS
       confirmList.innerHTML = "";
       const list = Array.isArray(files) ? files.filter(Boolean) : [];
+
       if (list.length) {
         list.forEach((file) => {
           const li = document.createElement("li");
           const href = buildDownloadUrl(file);
+
           if (href) {
-            const link = document.createElement("a");
-            link.href = href;
-            link.textContent = file;
-            link.target = "_blank";
-            link.rel = "noopener";
-            li.appendChild(link);
+            const a = document.createElement("a");
+            a.href = href;
+            a.textContent = file;
+            a.target = "_blank";
+            a.rel = "noopener";
+            li.appendChild(a);
           } else {
             li.textContent = file;
           }
+
           confirmList.appendChild(li);
         });
       } else {
@@ -648,22 +653,36 @@ document.addEventListener("DOMContentLoaded", () => {
         confirmList.appendChild(li);
       }
 
-      confirmModal.classList.add("is-visible");
+      // MOSTRAR MODAL (FIX CRÍTICO)
+      confirmModal.style.display = "flex";   // <--- NECESARIO
       confirmModal.hidden = false;
+      confirmModal.classList.add("is-visible");
+
+      // FUNCIÓN DE LIMPIEZA
       const cleanup = (result) => {
         confirmModal.classList.remove("is-visible");
         confirmModal.hidden = true;
+
+        // Eliminar estilo inline display:none
+        confirmModal.removeAttribute("style");   // <--- FIX PRINCIPAL
+
+        confirmList.innerHTML = "";
         resolve(result);
       };
+
       confirmAccept.onclick = () => cleanup(true);
       confirmCancel.onclick = () => cleanup(false);
     });
 
+
+  // OCULTAR MODAL MANUALMENTE SI SE NECESITA
   const hideConfirmModal = () => {
     if (confirmModal) {
       confirmModal.classList.remove("is-visible");
-      confirmModal.style.display = "none";
       confirmModal.hidden = true;
+
+      // Remover inline styles para no romper la visualización
+      confirmModal.removeAttribute("style");
     }
     if (confirmList) {
       confirmList.innerHTML = "";
