@@ -5,13 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ page_title if page_title else "AutoADA Web" }}</title>
   <link rel="icon" href="{{ url_for('static', path='img/LogoDOT.svg') }}" type="image/svg+xml">
+
+  <!-- CSS principal -->
   <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/components/console.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/components/summary_panel.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', path='css/components/result_panel.css') }}">
 </head>
+
 <body data-active-section="{{ active_section if active_section else '' }}">
   <div class="app-shell">
+    <!-- SIDEBAR -->
     <aside class="shell-sidebar">
       <div class="sidebar-brand">
         <img src="{{ url_for('static', path='img/LogoDOT_blanco.png') }}" alt="Logo DOT" class="brand-emblem">
@@ -20,6 +24,7 @@
         </div>
       </div>
 
+      <!-- NAVIGATION -->
       <div class="nav-groups">
         <p class="nav-heading">Panel</p>
 
@@ -79,24 +84,19 @@
         <ul class="nav-accordion">
           {% for section in nav_sections %}
             <li class="accordion-item {% if active_section == section.key %}is-open{% endif %}">
-              <button
-                class="accordion-trigger"
-                data-section="{{ section.key }}"
-                type="button"
-              >
+              <button class="accordion-trigger" data-section="{{ section.key }}" type="button">
                 {{ section.label }}
                 <span class="accordion-arrow"></span>
               </button>
+
               <ul class="accordion-panel">
                 {% for option in section['items'] %}
+                  {% set disabled = option['route'] is none %}
+                  {% set href = (not disabled) and request.url_for(option['route']) %}
                   <li>
-                    {% set disabled = option['route'] is none %}
-                    {% set href = (not disabled) and request.url_for(option['route']) %}
-                    <a
-                      href="{{ href if href else 'javascript:void(0);' }}"
-                      class="accordion-link {% if active_page == option['key'] %}is-active{% endif %} {% if disabled %}is-disabled{% endif %}"
-                      {% if disabled %}aria-disabled="true"{% endif %}
-                    >
+                    <a href="{{ href if href else 'javascript:void(0);' }}"
+                       class="accordion-link {% if active_page == option['key'] %}is-active{% endif %} {{ 'is-disabled' if disabled }}"
+                       {% if disabled %}aria-disabled="true"{% endif %}>
                       {{ option['label'] }}
                     </a>
                   </li>
@@ -112,6 +112,7 @@
       </div>
     </aside>
 
+    <!-- MAIN CONTENT -->
     <div class="shell-main">
       <header class="shell-header">
         <div class="header-text">
@@ -125,6 +126,22 @@
       </main>
     </div>
   </div>
+
+  <!-- ⭐ MODAL GLOBAL PARA CONFIRMAR DELETE/PURGE ⭐ -->
+  <div id="confirmModal" class="confirm-modal" hidden>
+    <div class="confirm-modal__dialog">
+      <h4>Confirma ejecución de Delete/Purge</h4>
+      <p>Ejecuta los archivos generados en HSH y confirma para continuar.</p>
+
+      <ul id="confirmList" class="confirm-modal__list"></ul>
+
+      <div class="confirm-modal__actions">
+        <button type="button" class="btn btn-secondary" id="confirmCancel">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="confirmAccept">Ya ejecuté</button>
+      </div>
+    </div>
+  </div>
+
   <script src="{{ url_for('static', path='js/sidebar.js') }}"></script>
 </body>
 </html>
