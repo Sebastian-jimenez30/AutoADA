@@ -36,16 +36,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileDownloadBase = form.dataset.fileDownload || "";
   const piUrl = form.dataset.piUrl || "";
   const confirmUrl = form.dataset.confirmUrl || "";
-  const confirmModal = document.body.querySelector("#confirmModal");
-  const confirmList = document.body.querySelector("#confirmList");
-  const confirmAccept = document.body.querySelector("#confirmAccept");
-  const confirmCancel = document.body.querySelector("#confirmCancel");
+  const confirmModal = document.getElementById("confirmModal");
+  const confirmList = document.getElementById("confirmList");
+  const confirmAccept = document.getElementById("confirmAccept");
+  const confirmCancel = document.getElementById("confirmCancel");
   const origin = window.location.origin;
-
-  // Asegura que el modal viva en <body> para evitar stacking contexts del layout principal
-  if (confirmModal && confirmModal.parentElement !== document.body) {
-    document.body.appendChild(confirmModal);
-  }
 
   const buildResultUrl = (sheetValue) => {
     try {
@@ -621,78 +616,75 @@ document.addEventListener("DOMContentLoaded", () => {
     logOutput.scrollTop = logOutput.scrollHeight;
   };
 
+
   const showConfirmModal = (files) =>
-    new Promise((resolve) => {
-      // Si por alguna razón el modal no existe, usa confirm() nativo como fallback
-      if (!confirmModal || !confirmAccept || !confirmCancel || !confirmList) {
-        const ok = window.confirm("Confirma que ejecutaste los archivos Delete/Purge en HSH?");
-        resolve(ok);
-        return;
-      }
+  new Promise((resolve) => {
+    if (!confirmModal) {
+      const ok = window.confirm("Confirma que ejecutaste los archivos Delete/Purge en HSH?");
+      resolve(ok);
+      return;
+    }
 
-      // PREPARAR LISTA DE ARCHIVOS
-      confirmList.innerHTML = "";
-      const list = Array.isArray(files) ? files.filter(Boolean) : [];
+    // PREPARAR LISTA DE ARCHIVOS
+    confirmList.innerHTML = "";
+    const list = Array.isArray(files) ? files.filter(Boolean) : [];
 
-      if (list.length) {
-        list.forEach((file) => {
-          const li = document.createElement("li");
-          const href = buildDownloadUrl(file);
-
-          if (href) {
-            const a = document.createElement("a");
-            a.href = href;
-            a.textContent = file;
-            a.target = "_blank";
-            a.rel = "noopener";
-            li.appendChild(a);
-          } else {
-            li.textContent = file;
-          }
-
-          confirmList.appendChild(li);
-        });
-      } else {
+    if (list.length) {
+      list.forEach((file) => {
         const li = document.createElement("li");
-        li.textContent = "Sin archivos detectados (revisa la salida).";
+        const href = buildDownloadUrl(file);
+        if (href) {
+          const a = document.createElement("a");
+          a.href = href;
+          a.textContent = file;
+          a.target = "_blank";
+          a.rel = "noopener";
+          li.appendChild(a);
+        } else {
+          li.textContent = file;
+        }
         confirmList.appendChild(li);
-      }
+      });
+    } else {
+      const li = document.createElement("li");
+      li.textContent = "Sin archivos detectados (revisa la salida).";
+      confirmList.appendChild(li);
+    }
 
-      // MOSTRAR MODAL (FIX CRÍTICO)
-      confirmModal.style.display = "flex";   // <--- NECESARIO
-      confirmModal.hidden = false;
-      confirmModal.classList.add("is-visible");
+    // MOSTRAR MODAL (SIMPLIFICADO)
+    confirmModal.hidden = false;
+    confirmModal.classList.add("is-visible");
 
-      // FUNCIÓN DE LIMPIEZA
-      const cleanup = (result) => {
-        confirmModal.classList.remove("is-visible");
-        confirmModal.hidden = true;
-
-        // Eliminar estilo inline display:none
-        confirmModal.removeAttribute("style");   // <--- FIX PRINCIPAL
-
-        confirmList.innerHTML = "";
-        resolve(result);
-      };
-
-      confirmAccept.onclick = () => cleanup(true);
-      confirmCancel.onclick = () => cleanup(false);
-    });
-
-
-  // OCULTAR MODAL MANUALMENTE SI SE NECESITA
-  const hideConfirmModal = () => {
-    if (confirmModal) {
+    // FUNCIÓN DE LIMPIEZA
+    const cleanup = (result) => {
       confirmModal.classList.remove("is-visible");
       confirmModal.hidden = true;
+      resolve(result);
+    };
 
-      // Remover inline styles para no romper la visualización
-      confirmModal.removeAttribute("style");
-    }
-    if (confirmList) {
-      confirmList.innerHTML = "";
-    }
-  };
+    confirmAccept.onclick = () => cleanup(true);
+    confirmCancel.onclick = () => cleanup(false);
+    
+    // Cerrar modal al hacer clic fuera del contenido
+    confirmModal.addEventListener('click', (e) => {
+      if (e.target === confirmModal) cleanup(false);
+    });
+  });
+
+
+// OCULTAR MODAL MANUALMENTE SI SE NECESITA
+const hideConfirmModal = () => {
+  if (confirmModal) {
+    confirmModal.classList.remove("is-visible");
+    confirmModal.hidden = true;
+
+    // Remover inline styles para no romper la visualización
+    confirmModal.removeAttribute("style");
+  }
+  if (confirmList) {
+    confirmList.innerHTML = "";
+  }
+};
 
   const handleStream = async (response, allowConfirm = true) => {
     const reader = response.body.getReader();

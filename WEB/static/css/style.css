@@ -33,6 +33,29 @@ body {
   color: var(--text);
   min-height: 100vh;
   display: flex;
+  position: relative;
+}
+
+/* Modal global (confirm delete/purge) asegurado sobre todo el layout */
+#confirmModal.confirm-modal {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+#confirmModal.confirm-modal.is-visible {
+  display: flex;
+}
+#confirmModal .confirm-modal__dialog {
+  max-width: 720px;
+  width: min(90vw, 720px);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  position: relative;
 }
 
 a {
