@@ -248,6 +248,158 @@ def _validar_eliminacion_groups(empresa: str, key_vieja: str, max_intentos: int 
     _record_status(empresa, "groups_eliminacion", False, f"Key {key_vieja} no eliminada después de {max_intentos} intentos")
     return False
 
+
+def _generar_reporte_verificacion_pairs(
+    *,
+    pairs: list[Pair],
+    scada_info_by_emp: dict,
+    records_by_empresa: dict,
+    empresa: str,
+    pi_sheet: Optional[tuple[list[str], list[list[str]]]] = None,
+    include_post: Optional[dict] = None,
+) -> str | None:
+    """
+    Genera el Excel de verificación con el formato Key actual / Key nueva.
+    Si include_post viene, agrega hoja "Post-Delete" con estados posteriores.
+    Si pi_sheet viene, agrega hoja "PI".
+    Retorna la ruta si se creó correctamente y emite REPORT_PATH.
+    """
+    try:
+        from openpyxl import Workbook  # type: ignore
+    except Exception:
+        return None
+
+    out_dir = Path(output_root()) / "cambiar_key"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report_path = out_dir / "Reporte_Cambiar_Key.xlsx"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Verificacion"
+
+    records_emp = records_by_empresa.get(empresa, {})
+
+    def _scada_and_bit(entry: Optional[dict], suffixes: Sequence[str]) -> tuple[str, str]:
+        if not entry:
+            return "no existe", "apagado"
+        analog = entry.get("source") == "ANALOG"
+        off = _scada_state_off(entry, analog or bool({s for s in suffixes if s in {"VALUE", "ESTIMATED"}}))
+        return "existe", "apagado" if off else "prendido"
+
+    row_cursor = 1
+    for old_base, new_base in pairs or [("", "")]:
+        old_base = old_base or ""
+        new_base = new_base or ""
+
+        scada_old = scada_info_by_emp.get(empresa, {}).get(old_base)
+        scada_new = scada_info_by_emp.get(empresa, {}).get(new_base)
+        suffix_old = _suffixes_for_key(records_emp.get(old_base, pd.DataFrame()), old_base)
+        suffix_new = _suffixes_for_key(records_emp.get(new_base, pd.DataFrame()), new_base)
+        scada_state_old, bit_state_old = _scada_and_bit(scada_old, suffix_old)
+        scada_state_new, bit_state_new = _scada_and_bit(scada_new, suffix_new)
+
+        groups_old = "existe" if records_emp.get(old_base) else "no existe"
+        groups_new = "existe" if records_emp.get(new_base) else "no existe"
+
+        lookup_old = "existe" if old_base else "no existe"
+        lookup_new = "no existe"
+
+        ws.cell(row=row_cursor, column=1, value="Key actual")
+        ws.cell(row=row_cursor, column=2, value=old_base)
+        ws.cell(row=row_cursor, column=3, value="Key nueva")
+        ws.cell(row=row_cursor, column=4, value=new_base)
+        row_cursor += 1
+
+        ws.cell(row=row_cursor, column=1, value="Scada")
+        ws.cell(row=row_cursor, column=2, value=scada_state_old)
+        ws.cell(row=row_cursor, column=3, value="Scada")
+        ws.cell(row=row_cursor, column=4, value=scada_state_new)
+        row_cursor += 1
+
+        ws.cell(row=row_cursor, column=1, value="Lookuptable")
+        ws.cell(row=row_cursor, column=2, value=lookup_old)
+        ws.cell(row=row_cursor, column=3, value="Lookuptable")
+        ws.cell(row=row_cursor, column=4, value=lookup_new)
+        row_cursor += 1
+
+        ws.cell(row=row_cursor, column=1, value="Groups")
+        ws.cell(row=row_cursor, column=2, value=groups_old)
+        ws.cell(row=row_cursor, column=3, value="Groups")
+        ws.cell(row=row_cursor, column=4, value=groups_new)
+        row_cursor += 1
+
+        ws.cell(row=row_cursor, column=1, value="Bit")
+        ws.cell(row=row_cursor, column=2, value=bit_state_old)
+        ws.cell(row=row_cursor, column=3, value="Bit")
+        ws.cell(row=row_cursor, column=4, value=bit_state_new)
+        row_cursor += 2
+
+    # Hoja post-Delete/Purge (opcional)
+    if include_post:
+        ws_post = wb.create_sheet("Post-Delete")
+        post_pairs = include_post.get("pairs") or pairs
+        post_scada = include_post.get("scada_info_by_emp") or scada_info_by_emp
+        post_records = include_post.get("records_by_empresa") or records_by_empresa
+        records_post_emp = post_records.get(empresa, {})
+        row_cursor = 1
+        for old_base, new_base in post_pairs or [("", "")]:
+            old_base = old_base or ""
+            new_base = new_base or ""
+            scada_old = post_scada.get(empresa, {}).get(old_base)
+            scada_new = post_scada.get(empresa, {}).get(new_base)
+            suffix_old = _suffixes_for_key(records_post_emp.get(old_base, pd.DataFrame()), old_base)
+            suffix_new = _suffixes_for_key(records_post_emp.get(new_base, pd.DataFrame()), new_base)
+            scada_state_old, bit_state_old = _scada_and_bit(scada_old, suffix_old)
+            scada_state_new, bit_state_new = _scada_and_bit(scada_new, suffix_new)
+            groups_old = "existe" if records_post_emp.get(old_base) else "no existe"
+            groups_new = "existe" if records_post_emp.get(new_base) else "no existe"
+
+            ws_post.cell(row=row_cursor, column=1, value="Key actual")
+            ws_post.cell(row=row_cursor, column=2, value=old_base)
+            ws_post.cell(row=row_cursor, column=3, value="Key nueva")
+            ws_post.cell(row=row_cursor, column=4, value=new_base)
+            row_cursor += 1
+
+            ws_post.cell(row=row_cursor, column=1, value="Scada")
+            ws_post.cell(row=row_cursor, column=2, value=scada_state_old)
+            ws_post.cell(row=row_cursor, column=3, value="Scada")
+            ws_post.cell(row=row_cursor, column=4, value=scada_state_new)
+            row_cursor += 1
+
+            ws_post.cell(row=row_cursor, column=1, value="Lookuptable")
+            ws_post.cell(row=row_cursor, column=2, value="existe" if old_base else "no existe")
+            ws_post.cell(row=row_cursor, column=3, value="Lookuptable")
+            ws_post.cell(row=row_cursor, column=4, value="no existe")
+            row_cursor += 1
+
+            ws_post.cell(row=row_cursor, column=1, value="Groups")
+            ws_post.cell(row=row_cursor, column=2, value=groups_old)
+            ws_post.cell(row=row_cursor, column=3, value="Groups")
+            ws_post.cell(row=row_cursor, column=4, value=groups_new)
+            row_cursor += 1
+
+            ws_post.cell(row=row_cursor, column=1, value="Bit")
+            ws_post.cell(row=row_cursor, column=2, value=bit_state_old)
+            ws_post.cell(row=row_cursor, column=3, value="Bit")
+            ws_post.cell(row=row_cursor, column=4, value=bit_state_new)
+            row_cursor += 2
+
+    # Hoja PI (opcional)
+    if pi_sheet:
+        headers, rows = pi_sheet
+        ws_pi = wb.create_sheet("PI")
+        ws_pi.append(headers)
+        for r in rows:
+            ws_pi.append(r)
+
+    try:
+        wb.save(report_path)
+    except Exception:
+        return None
+
+    print(f"REPORT_PATH:{report_path}")
+    return str(report_path)
+
 # === Operaciones SCADA (ACTUALIZADAS) ===
 
 def _ejecutar_comando_scada_guaranteed(empresa: str, host: str, base_key: str, tipo: int, bit: int, encender: bool = False) -> bool:
@@ -717,6 +869,15 @@ def _main() -> int:
                         print(f"MESSAGE:{emp} ({dominio}): bit activo detectado para {old_base} (tipo {tipo_chk}, bit {bit_chk}).")
         if not pending_found and not scada_pending:
             print("MESSAGE:Verificacion completa: no se encontraron registros ni bits activos.")
+        # Generar reporte de verificación desde el script
+        ruta_rep = _generar_reporte_verificacion_pairs(
+            pairs=pairs,
+            scada_info_by_emp=scada_info_by_emp,
+            records_by_empresa=records_by_empresa,
+            empresa=empresa,
+        )
+        if ruta_rep:
+            print(f"REPORT_PATH:{ruta_rep}")
         return 0
 
     if not args.apply:
@@ -728,6 +889,15 @@ def _main() -> int:
         for line in verification_summary:
             print(f"VERIFICATION_STATUS:{line}")
         print("MESSAGE:No se aplicaron cambios. Use --apply para ejecutar el cambio completo.")
+        # Generar reporte de verificación desde el script
+        ruta_rep = _generar_reporte_verificacion_pairs(
+            pairs=pairs,
+            scada_info_by_emp=scada_info_by_emp,
+            records_by_empresa=records_by_empresa,
+            empresa=empresa,
+        )
+        if ruta_rep:
+            print(f"REPORT_PATH:{ruta_rep}")
         return 0
 
     # === MODO APLICACIÓN - FLUJO COMPLETO ===
