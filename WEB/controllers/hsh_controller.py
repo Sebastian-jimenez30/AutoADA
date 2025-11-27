@@ -92,6 +92,44 @@ last_cambiar_scada_disable: dict[str, dict[str, set[str]]] = {}
 last_cambiar_scada_enable: dict[str, dict[str, set[str]]] = {}
 
 
+def _descriptor_to_suffix_map(descriptor: str) -> tuple[str, str, str, set[str]] | None:
+    """
+    Convierte un descriptor SCADA (EMP|DOM|BASE|tipo:bit) en la estructura esperada por apply_scada_updates.
+    Preserva la distinción analógico/digital a partir del tipo.
+    """
+    parts = [p.strip() for p in (descriptor or "").split("|")]
+    if len(parts) < 4:
+        return None
+    emp_sc, dom_sc, base_key, bit_spec = parts[:4]
+    if not emp_sc or not base_key or not bit_spec:
+        return None
+    try:
+        tipo_raw, bit_raw = bit_spec.split(":")
+        tipo = int(tipo_raw)
+        bit = int(bit_raw)
+    except Exception:
+        return None
+
+    suffixes: set[str] = set()
+    # Mantener la precisión: tipo 4 -> digital (sin sufijos), tipo 5 -> analógico
+    if tipo == 5:
+        suffixes.add("ESTIMATED" if bit == 2 else "VALUE")
+    # tipo 4 queda sin sufijos para que apply_scada_updates use bit 1 digital
+    return emp_sc.upper(), dom_sc.upper(), base_key, suffixes
+
+
+def _merge_suffix(
+    mapping: dict[str, dict[str, set[str]]],
+    emp: str,
+    base: str,
+    suffixes: set[str],
+) -> None:
+    if not emp or not base:
+        return
+    target = mapping.setdefault(emp.upper(), {}).setdefault(base, set())
+    target.update(suffixes)
+
+
 def get_empresas() -> Iterable[str]:
     return SERVER_RESOLVER.empresa_claves_view().keys()
 
@@ -1238,6 +1276,7 @@ def cambiar_key_pi() -> Generator[str, None, None]:
     yield _result_line({"status": status, "message": message})
 
 
+
 def cambiar_key_pipeline(
     empresa: str,
     dominio: str,
@@ -1245,14 +1284,14 @@ def cambiar_key_pipeline(
     archivo_nombre: str | None,
     aplicar: bool,
 ) -> Generator[str, None, None]:
-    """Flujo Cambiar Key para web (validar/aplicar, prepara PI y archivos)."""
+    """Flujo Cambiar Key para web (validar/aplicar) alineado con la l?gica desktop."""
     global last_cambiar_result, last_cambiar_state, last_cambiar_pending, last_cambiar_scada_disable, last_cambiar_scada_enable
 
     extra_messages: list[str] = []
 
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
         global last_cambiar_result
-        last_cambiar_result = EliminarResult(  # reutilizamos la estructura
+        last_cambiar_result = EliminarResult(
             status=status,
             message=message,
             files=files or [],
@@ -1274,7 +1313,7 @@ def cambiar_key_pipeline(
     yield from _yield_summary(f"{empresa}: proceso iniciado")
 
     if not empresa:
-        payload = {"status": "ERROR", "message": "Debes seleccionar una empresa válida."}
+        payload = {"status": "ERROR", "message": "Debes seleccionar una empresa v?lida."}
         _store_result(payload["status"], payload["message"])
         yield _result_line(payload)
         return
@@ -1289,7 +1328,7 @@ def cambiar_key_pipeline(
         env = VaultService.build_env()
     except Exception as exc:
         yield f"Error obteniendo variables del vault: {exc}\n"
-        message = "No se pudo construir el entorno. Verifica que el vault esté desbloqueado."
+        message = "No se pudo construir el entorno. Verifica que el vault est? desbloqueado."
         _store_result("ERROR", message)
         yield _result_line({"status": "ERROR", "message": message})
         return
@@ -1308,7 +1347,6 @@ def cambiar_key_pipeline(
         yield _result_line({"status": "ERROR", "message": message})
         return
 
-    # Sincronización previa
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
@@ -1354,14 +1392,13 @@ def cambiar_key_pipeline(
         rc_pre = yield from _stream_script(label, cmd)
         if rc_pre != 0:
             target_emp = empresa if "RESPALDO" not in label else (respaldo or empresa)
-            message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
-            yield from _yield_summary(f"{target_emp}: sincronización previa falló ({label})", "error")
+            message = f"Sincronizaci?n previa ({label}) fall? (rc={rc_pre})."
+            yield from _yield_summary(f"{target_emp}: sincronizaci?n previa fall? ({label})", "error")
             _store_result("ERROR", message)
             yield _result_line({"status": "ERROR", "message": message})
             return
     yield from _yield_summary("Dumps SCADA/HSH sincronizados", "success")
 
-    # contenedores de marcadores
     report_paths: list[str] = []
     info_paths: list[str] = []
     delete_files: list[str] = []
@@ -1371,6 +1408,12 @@ def cambiar_key_pipeline(
     pi_missing: list[str] = []
     scada_disable_map: dict[str, dict[str, set[str]]] = {}
     scada_enable_map: dict[str, dict[str, set[str]]] = {}
+    scada_disable_desc: list[str] = []
+    scada_enable_desc: list[str] = []
+    scada_pending: list[str] = []
+    pending_keys: set[str] = set()
+    changed_pairs: list[str] = []
+    script_errors: list[str] = []
 
     def _handle_marker_local(raw: str):
         line = (raw or "").strip()
@@ -1407,28 +1450,26 @@ def cambiar_key_pipeline(
                 pi_missing.append(detalle)
         elif line.startswith("SCADA_DISABLE:"):
             detalle = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in detalle.split("|")]
-            if len(parts) >= 4:
-                emp_sc, dom_sc, base, bit_spec = parts[:4]
-                emp_u = emp_sc.upper()
-                try:
-                    bit = int(bit_spec.split(":")[-1])
-                except Exception:
-                    bit = 1
-                suffix = "ESTIMATED" if bit == 2 else "VALUE"
-                scada_disable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+            scada_disable_desc.append(detalle)
+            parsed = _descriptor_to_suffix_map(detalle)
+            if parsed:
+                emp_sc, dom_sc, base, suffixes = parsed
+                _merge_suffix(scada_disable_map, emp_sc, base, suffixes)
         elif line.startswith("SCADA_ENABLE:"):
             detalle = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in detalle.split("|")]
-            if len(parts) >= 4:
-                emp_sc, dom_sc, base, bit_spec = parts[:4]
-                emp_u = emp_sc.upper()
-                try:
-                    bit = int(bit_spec.split(":")[-1])
-                except Exception:
-                    bit = 1
-                suffix = "ESTIMATED" if bit == 2 else "VALUE"
-                scada_enable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
+            scada_enable_desc.append(detalle)
+            parsed = _descriptor_to_suffix_map(detalle)
+            if parsed:
+                emp_sc, dom_sc, base, suffixes = parsed
+                _merge_suffix(scada_enable_map, emp_sc, base, suffixes)
+        elif line.startswith("SCADA_STILL_ON:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                scada_pending.append(detalle)
+        elif line.startswith("PENDING_KEY:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                pending_keys.add(detalle.upper())
         elif line.startswith("SUMMARY::"):
             try:
                 payload = line.split("SUMMARY::", 1)[1]
@@ -1446,11 +1487,27 @@ def cambiar_key_pipeline(
                         return [f"SUMMARY::{msg_clean}|info\n"]
             except Exception:
                 return None
+        elif line.startswith("ERROR:"):
+            detalle = line.split(":", 1)[1].strip()
+            if detalle:
+                script_errors.append(detalle)
+        elif line.startswith("MESSAGE:"):
+            mensaje = line.split(":", 1)[1].strip()
+            if mensaje:
+                if "Procesando par" in mensaje:
+                    try:
+                        contenido = mensaje.split("Procesando par", 1)[1]
+                        old_part, new_part = contenido.split("->", 1)
+                        old_key = old_part.strip().strip(":")
+                        new_key = new_part.strip()
+                        if old_key and new_key:
+                            changed_pairs.append(f"{old_key} -> {new_key}")
+                    except Exception:
+                        pass
+                extra_messages.append(mensaje)
         return None
 
-    # Helper para ejecutar el script y recolectar marcadores
-    def _run_script(label: str, extra_flags: list[str] | None = None):
-        nonlocal scada_disable_map, scada_enable_map, pi_tags_map, pi_reports, pi_missing, report_paths, info_paths, delete_files, purge_files
+    def _run_script(label: str, extra_flags: list[str] | None = None, collect_markers: bool = True):
         cmd = build_cmd("scripts.hsh_cambiar_key", empresa, "--input", archivo_path)
         if respaldo:
             cmd += ["--respaldo", respaldo]
@@ -1464,127 +1521,124 @@ def cambiar_key_pipeline(
                 raw = chunk
                 if "[" in raw and "]" in raw:
                     raw = raw.split("]", 1)[1]
-                marker_line = raw.strip()
-                yielded = _handle_marker_local(marker_line)
-                if yielded:
-                    for item in yielded:
-                        yield item
+                if collect_markers:
+                    marker_line = raw.strip()
+                    yielded = _handle_marker_local(marker_line)
+                    if yielded:
+                        for item in yielded:
+                            yield item
                 yield chunk
         except StopIteration as stop:
             rc_script = stop.value if isinstance(stop.value, int) else 0
         return rc_script if rc_script is not None else 0
 
-    # 1) Dry-run / validación (check-only) para derivar SCADA/PI y reportes
-    yield "Ejecutando verificación inicial de cambio de key...\n"
-    flags_check = ["--check-only"]
-    rc_check = yield from _run_script("CAMBIAR-KEY-CHECK", flags_check)
-    if rc_check != 0:
-        message = f"Verificación inicial falló (rc={rc_check})."
-        files_collected = sorted({*report_paths, *info_paths})
-        yield from _yield_summary(f"{empresa}: verificación inicial falló", "error")
-        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+    yield f"Ejecutando script de cambio de key ({empresa})...\n"
+    flags_apply: list[str] = []
+    if aplicar:
+        flags_apply = ["--apply", "--server", servidor_principal]
+        if respaldo and servidor_respaldo:
+            flags_apply += ["--server-respaldo", servidor_respaldo]
+
+    rc_script = yield from _run_script("CAMBIAR-KEY", flags_apply)
+    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
+
+    if rc_script != 0:
+        message = f"El script hsh_cambiar_key finaliz? con errores (rc={rc_script})."
+        yield from _yield_summary(f"{empresa}: cambio fall?", "error")
+        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages + script_errors})
         yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
         return
 
-    # Si es solo validar, terminamos aquí con los reportes y tags
-    if not aplicar:
-        files_collected = sorted({*report_paths, *info_paths})
-        # Fallback: si no hay reporte, busca el último Excel
-        if not report_paths:
-            fallback_report = _find_latest_cambiar_report()
-            if fallback_report:
-                report_paths.append(fallback_report)
-                files_collected = sorted({*files_collected, fallback_report})
-            else:
-                # Generar un Excel de verificación con formato tabla: Key actual / Key nueva y estados
-                try:
-                    out_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
-                    out_dir.mkdir(parents=True, exist_ok=True)
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    report_path = out_dir / f"reporte_cambiar_validacion_{timestamp}.xlsx"
-                    wb = Workbook()
-                    ws = wb.active
-                    ws.title = "Verificacion"
-
-                    keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
-                    keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
-                    pairs: list[tuple[str, str]] = []
-                    for idx in range(max(len(keys_old), len(keys_new))):
-                        old_key = keys_old[idx] if idx < len(keys_old) else ""
-                        new_key = keys_new[idx] if idx < len(keys_new) else ""
-                        pairs.append((old_key, new_key))
-
-                    if not pairs:
-                        ws.append(["detalle"])
-                        for msg in (extra_messages or ["Validación completada."]):
-                            ws.append([msg])
-                    else:
-                        row_cursor = 1
-                        for old_key, new_key in pairs:
-                            ws.cell(row=row_cursor, column=1, value="Key actual")
-                            ws.cell(row=row_cursor, column=2, value=old_key)
-                            ws.cell(row=row_cursor, column=3, value="Key nueva")
-                            ws.cell(row=row_cursor, column=4, value=new_key)
-                            row_cursor += 1
-
-                            ws.cell(row=row_cursor, column=1, value="Scada")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
-                            ws.cell(row=row_cursor, column=3, value="Scada")
-                            ws.cell(row=row_cursor, column=4, value="existe" if new_key else "no existe")
-                            row_cursor += 1
-
-                            ws.cell(row=row_cursor, column=1, value="LookupTable")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
-                            ws.cell(row=row_cursor, column=3, value="LookupTable")
-                            ws.cell(row=row_cursor, column=4, value="no existe")
-                            row_cursor += 1
-
-                            ws.cell(row=row_cursor, column=1, value="Groups")
-                            ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
-                            ws.cell(row=row_cursor, column=3, value="Groups")
-                            ws.cell(row=row_cursor, column=4, value="no existe")
-                            row_cursor += 1
-
-                            ws.cell(row=row_cursor, column=1, value="Bit")
-                            ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "apagado")
-                            ws.cell(row=row_cursor, column=3, value="Bit")
-                            ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "prendido")
-                            row_cursor += 2  # espacio entre bloques
-
-                    wb.save(report_path)
-                    report_paths.append(str(report_path))
-                    files_collected = sorted({*files_collected, str(report_path)})
-                except Exception:
-                    pass
-        status_msg = "Validación completada."
-        yield from _yield_summary(f"{empresa}: {status_msg}", "success")
-        extra = {
-            "details": extra_messages,
-            "report_path": report_paths[0] if report_paths else None,
-            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
-            "pi_reports": pi_reports,
-            "pi_missing": pi_missing,
-            "scada_on": scada_enable_map,
-            "scada_off": scada_disable_map,
-        }
-        last_cambiar_state = {
-            "empresa": empresa,
-            "respaldo": respaldo,
-            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
-        }
-        _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
-        yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
-        return
-
-    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
-    # Fallback: si no hay reporte, busca el último Excel
     if not report_paths:
         fallback_report = _find_latest_cambiar_report()
         if fallback_report:
             report_paths.append(fallback_report)
             files_collected = sorted({*files_collected, fallback_report})
 
-    # 2) Apagar SCADA antes de aplicar cambios en bases de datos
+    base_state = {
+        "empresa": empresa,
+        "respaldo": respaldo,
+        "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+    }
+    last_cambiar_state = base_state
+
+    if not aplicar:
+        status_msg = "Validaci?n completada."
+        yield from _yield_summary(f"{empresa}: {status_msg}", "success")
+
+        if not report_paths:
+            try:
+                out_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
+                out_dir.mkdir(parents=True, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                report_path = out_dir / f"reporte_cambiar_validacion_{timestamp}.xlsx"
+
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Verificacion"
+
+                keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
+                keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
+                max_len = max(len(keys_old), len(keys_new))
+
+                row_cursor = 1
+                for idx in range(max_len):
+                    old_key = keys_old[idx] if idx < len(keys_old) else ""
+                    new_key = keys_new[idx] if idx < len(keys_new) else ""
+
+                    ws.cell(row=row_cursor, column=1, value="Key actual")
+                    ws.cell(row=row_cursor, column=2, value=old_key)
+                    ws.cell(row=row_cursor, column=3, value="Key nueva")
+                    ws.cell(row=row_cursor, column=4, value=new_key)
+                    row_cursor += 1
+
+                    ws.cell(row=row_cursor, column=1, value="Scada")
+                    ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
+                    ws.cell(row=row_cursor, column=3, value="Scada")
+                    ws.cell(row=row_cursor, column=4, value="existe" if new_key else "no existe")
+                    row_cursor += 1
+
+                    ws.cell(row=row_cursor, column=1, value="Lookuptable")
+                    ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
+                    ws.cell(row=row_cursor, column=3, value="Lookuptable")
+                    ws.cell(row=row_cursor, column=4, value="no existe")
+                    row_cursor += 1
+
+                    ws.cell(row=row_cursor, column=1, value="Groups")
+                    ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
+                    ws.cell(row=row_cursor, column=3, value="Groups")
+                    ws.cell(row=row_cursor, column=4, value="no existe")
+                    row_cursor += 1
+
+                    ws.cell(row=row_cursor, column=1, value="Bit")
+                    ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "apagado")
+                    ws.cell(row=row_cursor, column=3, value="Bit")
+                    ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "prendido")
+                    row_cursor += 2
+
+                wb.save(report_path)
+                report_paths.append(str(report_path))
+            except Exception as exc:
+                extra_messages.append(f"No se pudo generar el reporte de verificaci?n: {exc}")
+
+        extra = {
+            "details": extra_messages + script_errors,
+            "report_path": report_paths[0] if report_paths else None,
+            "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
+            "pi_reports": pi_reports,
+            "pi_missing": pi_missing,
+            "scada_on_descriptors": scada_enable_desc,
+            "scada_off_descriptors": scada_disable_desc,
+            "scada_on": scada_enable_map,
+            "scada_off": scada_disable_map,
+            "changed_pairs": changed_pairs,
+            "pending_keys": sorted(pending_keys),
+            "scada_pending": scada_pending,
+        }
+        _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
+        yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
+        return
+
     if scada_disable_map:
         yield from _yield_summary("Apagando bits de keys actuales...", "warning")
         msgs_off, fail_off = apply_scada_updates(
@@ -1598,140 +1652,16 @@ def cambiar_key_pipeline(
             yield f"[SCADA-OFF] {msg}\n"
         if fail_off:
             message = "Apagado SCADA con errores. Revisa consola."
-            _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
+            _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages + script_errors})
             yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
             return
-    report_paths: list[str] = []
-    info_paths: list[str] = []
-    delete_files: list[str] = []
-    purge_files: list[str] = []
-    pi_tags_map: dict[str, set[str]] = {}
-    pi_reports: list[str] = []
-    pi_missing: list[str] = []
-    scada_disable_map: dict[str, dict[str, set[str]]] = {}
-    scada_enable_map: dict[str, dict[str, set[str]]] = {}
 
-    def _handle_marker(raw: str):
-        line = (raw or "").strip()
-        if not line:
-            return
-        if line.startswith("REPORT_PATH:"):
-            report_paths.append(line.split(":", 1)[1].strip())
-        elif line.startswith("INFO_PATH:"):
-            info_paths.append(line.split(":", 1)[1].strip())
-        elif line.startswith("DELETE_FILE:"):
-            if aplicar:
-                delete_files.append(line.split(":", 1)[1].strip())
-        elif line.startswith("PURGE_FILE:"):
-            if aplicar:
-                purge_files.append(line.split(":", 1)[1].strip())
-        elif line.startswith("PI_TAG:"):
-            detalle = line.split(":", 1)[1].strip()
-            if detalle:
-                try:
-                    emp_part, tag_part = detalle.split("|", 1)
-                    emp_key = emp_part.strip().upper()
-                    tag_val = tag_part.strip()
-                    if tag_val:
-                        pi_tags_map.setdefault(emp_key, set()).add(tag_val)
-                except Exception:
-                    pass
-        elif line.startswith("PI_REPORT:"):
-            detalle = line.split(":", 1)[1].strip()
-            if detalle:
-                pi_reports.append(detalle)
-        elif line.startswith("PI_MISSING:"):
-            detalle = line.split(":", 1)[1].strip()
-            if detalle:
-                pi_missing.append(detalle)
-        elif line.startswith("SCADA_DISABLE:"):
-            detalle = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in detalle.split("|")]
-            if len(parts) >= 4:
-                emp_sc, dom_sc, base, bit_spec = parts[:4]
-                emp_u = emp_sc.upper()
-                try:
-                    bit = int(bit_spec.split(":")[-1])
-                except Exception:
-                    bit = 1
-                suffix = "ESTIMATED" if bit == 2 else "VALUE"
-                scada_disable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
-        elif line.startswith("SCADA_ENABLE:"):
-            detalle = line.split(":", 1)[1].strip()
-            parts = [p.strip() for p in detalle.split("|")]
-            if len(parts) >= 4:
-                emp_sc, dom_sc, base, bit_spec = parts[:4]
-                emp_u = emp_sc.upper()
-                try:
-                    bit = int(bit_spec.split(":")[-1])
-                except Exception:
-                    bit = 1
-                suffix = "ESTIMATED" if bit == 2 else "VALUE"
-                scada_enable_map.setdefault(emp_u, {}).setdefault(base, set()).add(suffix)
-        elif line.startswith("SUMMARY::"):
-            try:
-                payload = line.split("SUMMARY::", 1)[1]
-                if "|" in payload:
-                    msg, var = payload.rsplit("|", 1)
-                    msg_clean = msg.strip()
-                    var_clean = var.strip()
-                    if msg_clean:
-                        extra_messages.append(msg_clean)
-                        yield f"SUMMARY::{msg_clean}|{var_clean}\n"
-                else:
-                    msg_clean = payload.strip()
-                    if msg_clean:
-                        extra_messages.append(msg_clean)
-                        yield f"SUMMARY::{msg_clean}|info\n"
-            except Exception:
-                return
+    last_cambiar_scada_disable = scada_disable_map
+    last_cambiar_scada_enable = scada_enable_map
 
-    yield f"Ejecutando script de cambio de key ({empresa})...\n"
-    # 3) Ejecutar el script en modo aplicar (Mongo/lookup + delete/purge)
-    yield "Aplicando cambio de key (Mongo/HSH)...\n"
-    flags_apply = ["--apply", "--server", servidor_principal]
-    if respaldo and servidor_respaldo:
-        flags_apply += ["--server-respaldo", servidor_respaldo]
-    rc_script = yield from _run_script("CAMBIAR-KEY-APPLY", flags_apply)
-
-    files_collected = sorted({*report_paths, *info_paths, *delete_files, *purge_files})
-
-    if rc_script != 0:
-        message = f"El script hsh_cambiar_key finalizó con errores (rc={rc_script})."
-        yield from _yield_summary(f"{empresa}: cambio falló", "error")
-        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
-        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
-        return
-
-    # Fallback: si no tenemos reporte, intenta localizar el último Excel en out/cambiar_key
-    if not report_paths:
-        fallback_report = _find_latest_cambiar_report()
-        if fallback_report:
-            report_paths.append(fallback_report)
-            files_collected = sorted({*files_collected, fallback_report})
-
-    # Si es aplicar y se generaron archivos delete/purge, pasamos a estado pendiente de confirmación
-    if aplicar and (delete_files or purge_files):
-        # Apagar SCADA antes de pedir confirmación
-        if scada_disable_map:
-            msgs_off, fail_off = apply_scada_updates(
-                inserted_keys_map=scada_disable_map,
-                env=env,
-                autoada_dir=AUTOADA_DIR,
-                enable=False,
-                log_filename="scada_cambiar_key_off.log",
-            )
-            for msg in msgs_off:
-                yield f"[SCADA-OFF] {msg}\n"
-            if fail_off:
-                message = "Apagado SCADA con errores. Revisa consola."
-                _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages})
-                yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
-                return
-
+    if delete_files or purge_files:
         last_cambiar_state = {
-            "empresa": empresa,
-            "respaldo": respaldo,
+            **base_state,
             "excel_path": archivo_path,
             "servidor_principal": servidor_principal,
             "servidor_respaldo": servidor_respaldo,
@@ -1740,13 +1670,13 @@ def cambiar_key_pipeline(
             "purge_files": purge_files,
             "report_paths": report_paths,
             "info_paths": info_paths,
+            "scada_on": scada_enable_map,
+            "scada_off": scada_disable_map,
         }
-        last_cambiar_scada_disable = scada_disable_map
-        last_cambiar_scada_enable = scada_enable_map
         last_cambiar_pending = True
         payload_pending = {
             "status": "PENDING_CONFIRM",
-            "message": "Pendiente confirmación de ejecución de Delete/Purge en HSH.",
+            "message": "Pendiente confirmaci?n de ejecuci?n de Delete/Purge en HSH.",
             "files": files_collected,
             "confirm_needed": True,
             "delete_files": delete_files,
@@ -1757,27 +1687,67 @@ def cambiar_key_pipeline(
         yield _result_line(payload_pending)
         return
 
-    status_msg = "Validación completada." if not aplicar else "Cambio de key completado."
-    yield from _yield_summary(f"{empresa}: {status_msg}", "success")
+    yield "Verificando limpieza y encendiendo SCADA...\n"
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_script(label, cmd)
+        if rc_pre != 0:
+            message = f"Sincronizaci?n de verificaci?n ({label}) fall? (rc={rc_pre})."
+            _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages + script_errors})
+            yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+            return
+
+    flags_check = ["--check-only"]
+    if servidor_principal:
+        flags_check += ["--server", servidor_principal]
+    if respaldo and servidor_respaldo:
+        flags_check += ["--server-respaldo", servidor_respaldo]
+
+    rc_check = yield from _run_script("CAMBIAR-KEY-CHECK", flags_check, collect_markers=False)
+    if rc_check != 0:
+        message = f"Verificaci?n post-aplicaci?n fall? (rc={rc_check})."
+        _store_result("ERROR", message, files=files_collected, extra={"details": extra_messages + script_errors})
+        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+        return
+
+    messages_scada_on: list[str] = []
+    scada_fail = False
+    if scada_enable_map:
+        msgs, has_fail = apply_scada_updates(
+            inserted_keys_map=scada_enable_map,
+            env=env,
+            autoada_dir=AUTOADA_DIR,
+            enable=True,
+            log_filename="scada_cambiar_key_on.log",
+        )
+        messages_scada_on.extend(msgs)
+        scada_fail = scada_fail or has_fail
+
+    if scada_fail:
+        _store_result("ERROR", "Encendido SCADA con errores.", files=files_collected, extra={"details": messages_scada_on})
+        yield _result_line({"status": "ERROR", "message": "Encendido SCADA con errores.", "files": files_collected, "details": messages_scada_on})
+        return
+
+    status_msg = "Cambio de key completado."
+    last_cambiar_pending = False
     extra = {
-        "details": extra_messages,
+        "details": extra_messages + script_errors + messages_scada_on,
         "report_path": report_paths[0] if report_paths else None,
         "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
         "pi_reports": pi_reports,
         "pi_missing": pi_missing,
+        "scada_on_descriptors": scada_enable_desc,
+        "scada_off_descriptors": scada_disable_desc,
         "scada_on": scada_enable_map,
         "scada_off": scada_disable_map,
+        "changed_pairs": changed_pairs,
+        "pending_keys": sorted(pending_keys),
+        "scada_pending": scada_pending,
     }
-    last_cambiar_state = {
-        "empresa": empresa,
-        "respaldo": respaldo,
-        "pi_tags": {k: sorted(v) for k, v in pi_tags_map.items()},
-    }
-    last_cambiar_pending = False
     _store_result("SUCCESS", status_msg, files=files_collected, extra=extra)
     yield _result_line({"status": "SUCCESS", "message": status_msg, "files": files_collected})
-
-
 def get_last_cambiar_result() -> EliminarResult | None:
     return last_cambiar_result
 
@@ -2057,7 +2027,6 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
 
     # Encender SCADA (si tenemos mapa)
     enable_map = last_cambiar_scada_enable or {}
-    disable_map = last_cambiar_scada_disable or {}
     messages_scada_on: list[str] = []
     scada_fail = False
     if enable_map:
@@ -2080,6 +2049,8 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
     if last_cambiar_result:
         last_cambiar_result.status = "SUCCESS"
         last_cambiar_result.message = status_msg
+        if isinstance(last_cambiar_result.extra, dict):
+            last_cambiar_result.extra.setdefault("details", []).extend(messages_scada_on)
     payload_success = {
         "status": "SUCCESS",
         "message": status_msg,
@@ -2087,6 +2058,8 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
         "details": messages_scada_on,
     }
     yield _result_line(payload_success)
+
+
 def eliminar_tags_pipeline(
     empresa: str,
     dominio: str,
