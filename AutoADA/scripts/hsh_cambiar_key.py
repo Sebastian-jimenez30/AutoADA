@@ -286,6 +286,25 @@ def _generar_reporte_verificacion_pairs(
         off = _scada_state_off(entry, analog or bool({s for s in suffixes if s in {"VALUE", "ESTIMATED"}}))
         return "existe", "apagado" if off else "prendido"
 
+    def _suffixes_from_records(records_obj, base_key: str) -> Sequence[str]:
+        # Adapta según el tipo guardado en records_by_empresa (DataFrame o lista de tuplas)
+        try:
+            if isinstance(records_obj, pd.DataFrame):
+                return _suffixes_for_key(records_obj, base_key)
+            if isinstance(records_obj, list):
+                suffixes: list[str] = []
+                for tup in records_obj:
+                    if len(tup) >= 3:
+                        point = str(tup[2] or "").strip()
+                        if point.startswith("."):
+                            point = point[1:]
+                        if point:
+                            suffixes.append(point.upper())
+                return suffixes
+        except Exception:
+            return []
+        return []
+
     row_cursor = 1
     for old_base, new_base in pairs or [("", "")]:
         old_base = old_base or ""
@@ -293,8 +312,8 @@ def _generar_reporte_verificacion_pairs(
 
         scada_old = scada_info_by_emp.get(empresa, {}).get(old_base)
         scada_new = scada_info_by_emp.get(empresa, {}).get(new_base)
-        suffix_old = _suffixes_for_key(records_emp.get(old_base, pd.DataFrame()), old_base)
-        suffix_new = _suffixes_for_key(records_emp.get(new_base, pd.DataFrame()), new_base)
+        suffix_old = _suffixes_from_records(records_emp.get(old_base, pd.DataFrame()), old_base)
+        suffix_new = _suffixes_from_records(records_emp.get(new_base, pd.DataFrame()), new_base)
         scada_state_old, bit_state_old = _scada_and_bit(scada_old, suffix_old)
         scada_state_new, bit_state_new = _scada_and_bit(scada_new, suffix_new)
 
