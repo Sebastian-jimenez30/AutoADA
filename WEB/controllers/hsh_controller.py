@@ -2123,11 +2123,19 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
 
     last_cambiar_pending = False
     status_msg = "Verificación completada. SCADA encendido. Continúa con PI si aplica."
+    try:
+        ruta_rep = _find_latest_cambiar_report()
+        if ruta_rep and ruta_rep not in files_collected:
+            files_collected.append(ruta_rep)
+    except Exception:
+        ruta_rep = None
     if last_cambiar_result:
         last_cambiar_result.status = "SUCCESS"
         last_cambiar_result.message = status_msg
         if isinstance(last_cambiar_result.extra, dict):
             last_cambiar_result.extra.setdefault("details", []).extend(messages_scada_on)
+            if ruta_rep:
+                last_cambiar_result.extra["report_path"] = ruta_rep
     payload_success = {
         "status": "SUCCESS",
         "message": status_msg,

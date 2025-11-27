@@ -1056,6 +1056,25 @@ def _main() -> int:
     for line in verification_summary:
         print(f"VERIFICATION_STATUS:{line}")
 
+    # Generar reporte post-delete (estado final tras confirmación manual) y hoja PI si hay datos
+    pi_sheet_payload = None
+    if pi_tags_new_by_empresa:
+        headers = ["Empresa", "Key", "Tag", "Value", "Timestamp"]
+        rows = []
+        # no tenemos valores aquí; se llenarán en la consulta PI dedicada
+        pi_sheet_payload = (headers, rows)
+
+    ruta_rep = _generar_reporte_verificacion_pairs(
+        pairs=pairs,
+        scada_info_by_emp=scada_info_by_emp,
+        records_by_empresa=records_by_empresa,
+        empresa=empresa,
+        include_post={"pairs": pairs, "scada_info_by_emp": scada_info_by_emp, "records_by_empresa": records_by_empresa},
+        pi_sheet=pi_sheet_payload,
+    )
+    if ruta_rep:
+        print(f"REPORT_PATH:{ruta_rep}")
+
     return 0
 
 
