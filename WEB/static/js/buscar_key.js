@@ -619,19 +619,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const showConfirmModal = (files) =>
     new Promise((resolve) => {
       if (!confirmModal || !confirmAccept || !confirmCancel || !confirmList) {
-        // fallback: confirm nativo
         const ok = window.confirm("Confirma que ejecutaste los archivos Delete/Purge en HSH?");
         resolve(ok);
         return;
       }
-      confirmModal.classList.remove("is-visible");
-      confirmModal.hidden = true;
+
       confirmList.innerHTML = "";
-      confirmList.innerHTML = "";
-      if (Array.isArray(files) && files.length) {
-        files.forEach((file) => {
+      const list = Array.isArray(files) ? files.filter(Boolean) : [];
+      if (list.length) {
+        list.forEach((file) => {
           const li = document.createElement("li");
-          li.textContent = file;
+          const href = buildDownloadUrl(file);
+          if (href) {
+            const link = document.createElement("a");
+            link.href = href;
+            link.textContent = file;
+            link.target = "_blank";
+            link.rel = "noopener";
+            li.appendChild(link);
+          } else {
+            li.textContent = file;
+          }
           confirmList.appendChild(li);
         });
       } else {
@@ -639,12 +647,11 @@ document.addEventListener("DOMContentLoaded", () => {
         li.textContent = "Sin archivos detectados (revisa la salida).";
         confirmList.appendChild(li);
       }
+
       confirmModal.classList.add("is-visible");
-      confirmModal.style.display = "flex";
       confirmModal.hidden = false;
       const cleanup = (result) => {
         confirmModal.classList.remove("is-visible");
-        confirmModal.style.display = "none";
         confirmModal.hidden = true;
         resolve(result);
       };

@@ -897,6 +897,10 @@ def _main() -> int:
         )
         if ruta_rep:
             print(f"REPORT_PATH:{ruta_rep}")
+        # Si aún hay pendientes, devolver código distinto de cero para que la capa superior siga en bucle
+        if pending_found or scada_pending:
+            print("MESSAGE:Verificación pendiente: aún hay claves/bits activos. Ejecuta de nuevo Delete/Purge y confirma.")
+            return 2
         return 0
 
     if not args.apply:
