@@ -36,10 +36,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileDownloadBase = form.dataset.fileDownload || "";
   const piUrl = form.dataset.piUrl || "";
   const confirmUrl = form.dataset.confirmUrl || "";
-  const confirmModal = document.getElementById("confirmModal");
-  const confirmList = document.getElementById("confirmList");
-  const confirmAccept = document.getElementById("confirmAccept");
-  const confirmCancel = document.getElementById("confirmCancel");
+  const confirmModal = document.body.querySelector("#confirmModal");
+  const confirmList = document.body.querySelector("#confirmList");
+  const confirmAccept = document.body.querySelector("#confirmAccept");
+  const confirmCancel = document.body.querySelector("#confirmCancel");
   const origin = window.location.origin;
 
   // Asegura que el modal viva en <body> para evitar stacking contexts del layout principal

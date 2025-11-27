@@ -343,6 +343,7 @@
   max-width: 720px;
   width: min(90vw, 720px);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24);
+  position: relative;
 }
 
 .confirm-modal__list {
