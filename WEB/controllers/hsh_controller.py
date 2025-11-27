@@ -4,6 +4,7 @@ import base64
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -1414,6 +1415,7 @@ def cambiar_key_pipeline(
     pending_keys: set[str] = set()
     changed_pairs: list[str] = []
     script_errors: list[str] = []
+    verification_info: dict[str, dict[str, object]] = {}
 
     def _handle_marker_local(raw: str):
         line = (raw or "").strip()
@@ -1470,6 +1472,28 @@ def cambiar_key_pipeline(
             detalle = line.split(":", 1)[1].strip()
             if detalle:
                 pending_keys.add(detalle.upper())
+        elif line.startswith("VERIFICATION_STATUS:"):
+            payload = line.split("VERIFICATION_STATUS:", 1)[1].strip()
+            # Ej: "Key 24001004: 2 registros en groups" o "Key 24001006 existe, bits apagados: True"
+            m_groups = re.search(r"Key\\s+(\\d+)\\D+(registros en groups)", payload, re.IGNORECASE)
+            m_bits = re.search(r"Key\\s+(\\d+).*bits apagados:\\s*(True|False)", payload, re.IGNORECASE)
+            m_tipo = re.search(r"Key\\s+(\\d+).*tipo=\\s*\\d+.*bit=\\s*\\d+", payload, re.IGNORECASE)
+            key_match = re.search(r"Key\\s+(\\d+)", payload, re.IGNORECASE)
+            key_val = key_match.group(1) if key_match else None
+            if key_val:
+                info = verification_info.setdefault(key_val, {"scada": None, "groups": None, "bit": None})
+                lower = payload.lower()
+                if "existe" in lower:
+                    info["scada"] = True
+                if m_groups:
+                    info["groups"] = True
+                    info["bit"] = "prendido"
+                if m_bits:
+                    info["scada"] = True
+                    info["bit"] = "apagado" if m_bits.group(2).lower() == "true" else "prendido"
+                if m_tipo:
+                    info["scada"] = True
+                    info["bit"] = "prendido"
         elif line.startswith("SUMMARY::"):
             try:
                 payload = line.split("SUMMARY::", 1)[1]
@@ -1505,6 +1529,21 @@ def cambiar_key_pipeline(
                     except Exception:
                         pass
                 extra_messages.append(mensaje)
+                # Parse mensajes de groups/bits
+                key_match = re.search(r"Key\\s+(\\d+)", mensaje)
+                key_val = key_match.group(1) if key_match else None
+                if key_val:
+                    info = verification_info.setdefault(key_val, {"scada": None, "groups": None, "bit": None})
+                    lower = mensaje.lower()
+                    if "registros en groups" in lower:
+                        info["groups"] = True
+                        info["bit"] = "prendido"
+                    if "bits apagados" in lower:
+                        info["scada"] = True
+                        info["bit"] = "apagado" if "true" in lower else "prendido"
+                    if "tipo=" in lower and "bit=" in lower:
+                        info["scada"] = True
+                        info["bit"] = "prendido"
         return None
 
     def _run_script(label: str, extra_flags: list[str] | None = None, collect_markers: bool = True):
@@ -1570,8 +1609,7 @@ def cambiar_key_pipeline(
             try:
                 out_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
                 out_dir.mkdir(parents=True, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                report_path = out_dir / f"reporte_cambiar_validacion_{timestamp}.xlsx"
+                report_path = out_dir / "Reporte_Cambiar_Key.xlsx"
 
                 wb = Workbook()
                 ws = wb.active
@@ -1594,31 +1632,34 @@ def cambiar_key_pipeline(
                     for k in sorted(pending_keys):
                         pair_list.append((k, ""))
 
-                def _status_for(key: str, is_new: bool) -> tuple[str, str, str]:
+                def _state_for(key: str, is_new: bool) -> tuple[str, str, str]:
                     k = key.strip()
                     if not k:
                         return ("no existe", "no existe", "apagado")
-                    scada_state = "no existe"
-                    groups_state = "no existe"
-                    bit_state = "apagado"
-                    lower_msgs = [m.lower() for m in extra_messages]
-                    for msg in lower_msgs:
-                        if k in msg:
-                            if "registros en groups" in msg:
+                    info = verification_info.get(k, {})
+                    scada_state = "existe" if info.get("scada") else "no existe"
+                    groups_state = "existe" if info.get("groups") else "no existe"
+                    bit_state = str(info.get("bit") or "apagado")
+                    if bit_state.lower() not in {"apagado", "prendido"}:
+                        bit_state = "apagado"
+                    if scada_state == "no existe":
+                        if (is_new and any(k in emp_map for emp_map in scada_enable_map.values())) or (
+                            not is_new and any(k in emp_map for emp_map in scada_disable_map.values())
+                        ):
+                            scada_state = "existe"
+                    if groups_state == "no existe":
+                        k_low = k.lower()
+                        for msg in extra_messages:
+                            lower = msg.lower()
+                            if k_low in lower and "registros en groups" in lower:
                                 groups_state = "existe"
-                                bit_state = "prendido"
-                            if "existe" in msg or "programado" in msg:
-                                scada_state = "existe"
-                            if "bits apagados" in msg:
-                                bit_state = "apagado" if "true" in msg else "prendido"
-                            if "tipo=" in msg and "bit=" in msg:
-                                bit_state = "prendido"
+                                break
                     return scada_state, groups_state, bit_state
 
                 row_cursor = 1
                 for old_key, new_key in pair_list or [("", "")]:
-                    scada_old, groups_old, bit_old = _status_for(old_key, False)
-                    scada_new, groups_new, bit_new = _status_for(new_key, True)
+                    scada_old, groups_old, bit_old = _state_for(old_key, False)
+                    scada_new, groups_new, bit_new = _state_for(new_key, True)
 
                     ws.cell(row=row_cursor, column=1, value="Key actual")
                     ws.cell(row=row_cursor, column=2, value=old_key)
@@ -1651,10 +1692,11 @@ def cambiar_key_pipeline(
                     row_cursor += 2
 
                 wb.save(report_path)
-                report_paths.append(str(report_path))
+                report_paths = [str(report_path)]
                 files_collected = sorted({*files_collected, str(report_path)})
             except Exception as exc:
                 extra_messages.append(f"No se pudo generar el reporte de verificaci?n: {exc}")
+
 
         extra = {
             "details": extra_messages + script_errors,
