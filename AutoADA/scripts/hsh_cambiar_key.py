@@ -366,8 +366,8 @@ def _generar_reporte_verificacion_pairs(
             new_base = new_base or ""
             scada_old = post_scada.get(empresa, {}).get(old_base)
             scada_new = post_scada.get(empresa, {}).get(new_base)
-            suffix_old = _suffixes_for_key(records_post_emp.get(old_base, pd.DataFrame()), old_base)
-            suffix_new = _suffixes_for_key(records_post_emp.get(new_base, pd.DataFrame()), new_base)
+            suffix_old = _suffixes_from_records(records_post_emp.get(old_base, pd.DataFrame()), old_base)
+            suffix_new = _suffixes_from_records(records_post_emp.get(new_base, pd.DataFrame()), new_base)
             scada_state_old, bit_state_old = _scada_and_bit(scada_old, suffix_old)
             scada_state_new, bit_state_new = _scada_and_bit(scada_new, suffix_new)
             groups_old = "existe" if records_post_emp.get(old_base) else "no existe"
