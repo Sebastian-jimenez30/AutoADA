@@ -1577,14 +1577,48 @@ def cambiar_key_pipeline(
                 ws = wb.active
                 ws.title = "Verificacion"
 
-                keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
-                keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
-                max_len = max(len(keys_old), len(keys_new))
+                pair_list: list[tuple[str, str]] = []
+                for pair in changed_pairs:
+                    if "->" in pair:
+                        old, new = pair.split("->", 1)
+                        pair_list.append((old.strip(), new.strip()))
+                if not pair_list:
+                    keys_old = sorted({k for emp_map in scada_disable_map.values() for k in emp_map.keys()})
+                    keys_new = sorted({k for emp_map in scada_enable_map.values() for k in emp_map.keys()})
+                    max_len = max(len(keys_old), len(keys_new))
+                    for idx in range(max_len):
+                        old_key = keys_old[idx] if idx < len(keys_old) else ""
+                        new_key = keys_new[idx] if idx < len(keys_new) else ""
+                        pair_list.append((old_key, new_key))
+                if not pair_list and pending_keys:
+                    for k in sorted(pending_keys):
+                        pair_list.append((k, ""))
+
+                def _status_for(key: str, is_new: bool) -> tuple[str, str, str]:
+                    k = key.strip()
+                    if not k:
+                        return ("no existe", "no existe", "apagado")
+                    scada_state = "no existe"
+                    groups_state = "no existe"
+                    bit_state = "apagado"
+                    lower_msgs = [m.lower() for m in extra_messages]
+                    for msg in lower_msgs:
+                        if k in msg:
+                            if "registros en groups" in msg:
+                                groups_state = "existe"
+                                bit_state = "prendido"
+                            if "existe" in msg or "programado" in msg:
+                                scada_state = "existe"
+                            if "bits apagados" in msg:
+                                bit_state = "apagado" if "true" in msg else "prendido"
+                            if "tipo=" in msg and "bit=" in msg:
+                                bit_state = "prendido"
+                    return scada_state, groups_state, bit_state
 
                 row_cursor = 1
-                for idx in range(max_len):
-                    old_key = keys_old[idx] if idx < len(keys_old) else ""
-                    new_key = keys_new[idx] if idx < len(keys_new) else ""
+                for old_key, new_key in pair_list or [("", "")]:
+                    scada_old, groups_old, bit_old = _status_for(old_key, False)
+                    scada_new, groups_new, bit_new = _status_for(new_key, True)
 
                     ws.cell(row=row_cursor, column=1, value="Key actual")
                     ws.cell(row=row_cursor, column=2, value=old_key)
@@ -1593,9 +1627,9 @@ def cambiar_key_pipeline(
                     row_cursor += 1
 
                     ws.cell(row=row_cursor, column=1, value="Scada")
-                    ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
+                    ws.cell(row=row_cursor, column=2, value=scada_old)
                     ws.cell(row=row_cursor, column=3, value="Scada")
-                    ws.cell(row=row_cursor, column=4, value="existe" if new_key else "no existe")
+                    ws.cell(row=row_cursor, column=4, value=scada_new)
                     row_cursor += 1
 
                     ws.cell(row=row_cursor, column=1, value="Lookuptable")
@@ -1605,19 +1639,20 @@ def cambiar_key_pipeline(
                     row_cursor += 1
 
                     ws.cell(row=row_cursor, column=1, value="Groups")
-                    ws.cell(row=row_cursor, column=2, value="existe" if old_key else "no existe")
+                    ws.cell(row=row_cursor, column=2, value=groups_old)
                     ws.cell(row=row_cursor, column=3, value="Groups")
-                    ws.cell(row=row_cursor, column=4, value="no existe")
+                    ws.cell(row=row_cursor, column=4, value=groups_new if new_key else "no existe")
                     row_cursor += 1
 
                     ws.cell(row=row_cursor, column=1, value="Bit")
-                    ws.cell(row=row_cursor, column=2, value="prendido" if old_key else "apagado")
+                    ws.cell(row=row_cursor, column=2, value=bit_old)
                     ws.cell(row=row_cursor, column=3, value="Bit")
-                    ws.cell(row=row_cursor, column=4, value="apagado" if new_key else "prendido")
+                    ws.cell(row=row_cursor, column=4, value=bit_new)
                     row_cursor += 2
 
                 wb.save(report_path)
                 report_paths.append(str(report_path))
+                files_collected = sorted({*files_collected, str(report_path)})
             except Exception as exc:
                 extra_messages.append(f"No se pudo generar el reporte de verificaci?n: {exc}")
 
