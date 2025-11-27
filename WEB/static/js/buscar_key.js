@@ -42,6 +42,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const confirmCancel = document.getElementById("confirmCancel");
   const origin = window.location.origin;
 
+  // Asegura que el modal viva en <body> para evitar stacking contexts del layout principal
+  if (confirmModal && confirmModal.parentElement !== document.body) {
+    document.body.appendChild(confirmModal);
+  }
+
   const buildResultUrl = (sheetValue) => {
     try {
       const url = new URL(resultBaseUrl, origin);
