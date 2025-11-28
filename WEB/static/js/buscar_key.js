@@ -625,50 +625,69 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // PREPARAR LISTA DE ARCHIVOS
+    // PREPARAR LISTA DE ARCHIVOS - SOLO NOMBRE DEL ARCHIVO
     confirmList.innerHTML = "";
     const list = Array.isArray(files) ? files.filter(Boolean) : [];
 
     if (list.length) {
-      list.forEach((file) => {
+      list.forEach((filePath) => {
         const li = document.createElement("li");
-        const href = buildDownloadUrl(file);
+        
+        // Extraer solo el nombre del archivo de la ruta completa
+        const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+        
+        const href = buildDownloadUrl(filePath);
         if (href) {
           const a = document.createElement("a");
           a.href = href;
-          a.textContent = file;
+          a.textContent = fileName;
           a.target = "_blank";
           a.rel = "noopener";
+          a.title = `Descargar: ${fileName}`; // Tooltip con nombre completo
           li.appendChild(a);
         } else {
-          li.textContent = file;
+          const span = document.createElement("span");
+          span.textContent = fileName;
+          li.appendChild(span);
         }
         confirmList.appendChild(li);
       });
     } else {
       const li = document.createElement("li");
-      li.textContent = "Sin archivos detectados (revisa la salida).";
+      li.className = "confirm-modal__list--empty";
+      li.textContent = "No se generaron archivos para descargar";
       confirmList.appendChild(li);
     }
 
-    // MOSTRAR MODAL (SIMPLIFICADO)
+    // MOSTRAR MODAL
     confirmModal.hidden = false;
     confirmModal.classList.add("is-visible");
 
-    // FUNCIÓN DE LIMPIEZA
+    // FUNCIÓN DE LIMPIEZA - SOLO BOTÓN "YA EJECUTÉ"
     const cleanup = (result) => {
       confirmModal.classList.remove("is-visible");
       confirmModal.hidden = true;
       resolve(result);
     };
 
+    // Solo el botón de aceptar
     confirmAccept.onclick = () => cleanup(true);
-    confirmCancel.onclick = () => cleanup(false);
+    
+    // Eliminar el botón de cancelar
+    if (confirmCancel) {
+      confirmCancel.style.display = 'none';
+    }
     
     // Cerrar modal al hacer clic fuera del contenido
-    confirmModal.addEventListener('click', (e) => {
+    const handleOutsideClick = (e) => {
       if (e.target === confirmModal) cleanup(false);
-    });
+    };
+    confirmModal.addEventListener('click', handleOutsideClick);
+    
+    // Limpiar el event listener cuando se cierre el modal
+    setTimeout(() => {
+      confirmModal.removeEventListener('click', handleOutsideClick);
+    }, 0);
   });
 
 
