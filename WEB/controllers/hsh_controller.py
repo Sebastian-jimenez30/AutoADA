@@ -93,6 +93,17 @@ last_cambiar_scada_disable: dict[str, dict[str, set[str]]] = {}
 last_cambiar_scada_enable: dict[str, dict[str, set[str]]] = {}
 
 
+@dataclass
+class ValidarResult:
+    status: str
+    message: str
+    files: list[str] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+
+last_validar_result: Optional[ValidarResult] = None
+
+
 def _descriptor_to_suffix_map(descriptor: str) -> tuple[str, str, str, set[str]] | None:
     """
     Convierte un descriptor SCADA (EMP|DOM|BASE|tipo:bit) en la estructura esperada por apply_scada_updates.
@@ -2638,3 +2649,256 @@ def eliminar_tags_pipeline(
     _store_result(final_status, payload["message"], files=files, extra=extra_payload)
     yield from _yield_summary(final_message, "success" if final_status == "SUCCESS" else "error")
     yield _result_line(payload)
+
+
+def validar_hsh_pipeline() -> Generator[str, None, None]:
+    """Flujo web para Validar HSH (equivale al handler desktop)."""
+    global last_validar_result
+    last_validar_result = None
+
+    extra_messages: list[str] = []
+
+    def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_validar_result
+        last_validar_result = ValidarResult(
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line_local(message, variant, extra_messages)
+        if line:
+            return [line]
+        return []
+
+    empresa, respaldo = detect_empresas_por_host()
+    dominio = "CC"
+
+    yield f"Iniciando proceso Validar HSH para empresa={empresa} dominio={dominio}\n"
+    for line in _yield_summary(f"{empresa}: proceso iniciado"):
+        yield line
+
+    if not empresa:
+        payload = {"status": "ERROR", "message": "No se pudo determinar la empresa a validar."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        message = f"No se pudo construir el entorno: {exc}"
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    servidor_principal = SERVER_RESOLVER.generar_server(empresa, dominio)
+    servidor_respaldo = SERVER_RESOLVER.generar_server(respaldo, dominio) if respaldo else None
+
+    if not servidor_principal:
+        message = "No se pudo resolver el servidor principal para la empresa detectada."
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    pre_commands: list[tuple[str, list[str]] | None] = [
+        (
+            "IMPORT-PRINCIPAL",
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_validar"),
+        ),
+        (
+            "IMPORT-RESPALDO",
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_validar"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+        (
+            "CONVERT-SCA-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        (
+            "CONVERT-HSH-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+    ]
+
+    def _stream_step(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_step(label, cmd)
+        if rc_pre != 0:
+            msg = f"{label} falló (rc={rc_pre})."
+            for line in _yield_summary(msg, "error"):
+                yield line
+            payload = {"status": "ERROR", "message": msg}
+            _store(payload["status"], payload["message"], extra={"details": extra_messages})
+            yield _result_line(payload)
+            return
+
+    for line in _yield_summary("Dumps SCADA/HSH sincronizados", "success"):
+        yield line
+
+    # Validaciones finales
+    if respaldo:
+        cmd_validar = build_cmd("scripts.validaciones_hsh", empresa, "--respaldo", respaldo)
+    else:
+        cmd_validar = build_cmd("scripts.validaciones_hsh", empresa)
+
+    rc_val = yield from _stream_step("VALIDAR-HSH", cmd_validar)
+
+    status = "SUCCESS" if rc_val == 0 else "ERROR"
+    message = "Validación HSH completada." if rc_val == 0 else f"Validación HSH finalizó con errores (rc={rc_val})."
+    variant = "success" if status == "SUCCESS" else "error"
+    for line in _yield_summary(message, variant):
+        yield line
+
+    # Localizar reportes generados
+    report_dir = os.path.normpath(os.path.join(AUTOADA_DIR, "out", f"Validaciones_{empresa}"))
+    files: list[str] = []
+    if os.path.isdir(report_dir):
+        for root, _, filenames in os.walk(report_dir):
+            for fname in filenames:
+                files.append(os.path.normpath(os.path.join(root, fname)))
+
+    report_path = os.path.normpath(os.path.join(report_dir, f"Validaciones_{empresa}.xlsx"))
+    if not os.path.isfile(report_path):
+        report_path = None
+
+    payload = {"status": status, "message": message, "files": files, "details": extra_messages}
+    extra_payload: dict[str, Any] = {
+        "details": extra_messages,
+        "report_path": report_path,
+        "empresa": empresa,
+        "respaldo": respaldo,
+    }
+    _store(status, message, files=files, extra=extra_payload)
+    yield _result_line(payload)
+
+
+def get_last_validar_result() -> ValidarResult | None:
+    return last_validar_result
+
+
+def load_validar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_validar_result
+    if result is None:
+        return None
+
+    def _normalize_path(path: str) -> str:
+        p = os.path.normpath(path)
+        if not os.path.isabs(p):
+            p = os.path.normpath(os.path.join(AUTOADA_DIR, p))
+        return p
+
+    report_path = None
+    empresa = None
+    if isinstance(result.extra, dict):
+        report_path = result.extra.get("report_path")
+        empresa = result.extra.get("empresa")
+    if report_path:
+        report_path = _normalize_path(report_path)
+    if (not report_path or not os.path.isfile(report_path)) and empresa:
+        candidate = os.path.join(AUTOADA_DIR, "out", f"Validaciones_{empresa}", f"Validaciones_{empresa}.xlsx")
+        candidate = os.path.normpath(candidate)
+        if os.path.isfile(candidate):
+            report_path = candidate
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+    }
+
+    if not report_path or not os.path.isfile(report_path):
+        return base_payload
+
+    wb = load_workbook(report_path, read_only=True, data_only=True)
+    try:
+        sheet_names = list(wb.sheetnames)
+        if not sheet_names:
+            base_payload["report_path"] = report_path
+            return base_payload
+
+        active_sheet = sheet if sheet in sheet_names else sheet_names[0]
+        ws = wb[active_sheet]
+        rows_iter = ws.iter_rows(values_only=True)
+
+        try:
+            headers_raw = next(rows_iter)
+        except StopIteration:
+            base_payload["sheets"] = sheet_names
+            base_payload["active_sheet"] = active_sheet
+            return base_payload
+
+        headers: list[str] = []
+        for idx, header in enumerate(headers_raw or (), start=1):
+            if isinstance(header, str):
+                clean = header.strip()
+                headers.append(clean if clean else f"Columna {idx}")
+            elif header is None:
+                headers.append(f"Columna {idx}")
+            else:
+                headers.append(str(header))
+
+        preview_rows: list[dict[str, Any]] = []
+        row_count = 0
+        has_more = False
+
+        for row in rows_iter:
+            row_count += 1
+            row_dict: dict[str, Any] = {}
+            for col_idx, header in enumerate(headers):
+                value = row[col_idx] if col_idx < len(row) else None
+                row_dict[header] = value
+            if row_count <= limit:
+                preview_rows.append(row_dict)
+            else:
+                has_more = True
+                break
+
+        download_url = f"/hsh/validar/result/download?path={quote(report_path)}"
+
+        base_payload.update(
+            {
+                "sheets": sheet_names,
+                "active_sheet": active_sheet,
+                "columns": headers,
+                "rows": preview_rows,
+                "total": row_count,
+                "has_more": has_more,
+                "download_url": download_url,
+                "report_path": report_path,
+            }
+        )
+        return base_payload
+    finally:
+        wb.close()

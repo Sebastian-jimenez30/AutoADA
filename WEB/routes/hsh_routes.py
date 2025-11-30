@@ -134,6 +134,58 @@ def hsh_cambiar_page(request: Request):
     return templates.TemplateResponse("hsh_cambiar.html", context)
 
 
+@router.get("/hsh/validar", response_class=HTMLResponse, name="hsh_validar_page")
+def hsh_validar_page(request: Request):
+    context = {
+        "request": request,
+        "active_section": "hsh",
+        "active_page": "hsh_validar",
+        "page_title": "HSH - Validar",
+        "page_subtitle": "Sincroniza SCADA/HSH y ejecuta las validaciones automáticas.",
+    }
+    return templates.TemplateResponse("hsh_validar.html", context)
+
+
+@router.post("/hsh/validar/run")
+def ejecutar_hsh_validar(request: Request):
+    def _pipeline():
+        yield from hsh_controller.validar_hsh_pipeline()
+    return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
+
+
+@router.get("/hsh/validar/result")
+def obtener_hsh_validar_result(
+    sheet: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    data = hsh_controller.load_validar_result_preview(sheet=sheet, limit=limit)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
+    return data
+
+
+@router.get("/hsh/validar/result/download")
+def descargar_hsh_validar_result(path: str):
+    if not path:
+        raise HTTPException(status_code=400, detail="Ruta inválida.")
+    file_path = Path(path)
+    if not file_path.is_absolute():
+        file_path = Path(hsh_controller.AUTOADA_DIR).joinpath(file_path).resolve()
+    resolved = file_path.resolve()
+    allowed_root = Path(hsh_controller.AUTOADA_DIR).resolve()
+    try:
+        resolved.relative_to(allowed_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Ruta no permitida.")
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+    return FileResponse(
+        str(resolved),
+        filename=resolved.name,
+        media_type="application/octet-stream",
+    )
+
+
 @router.post("/hsh/cambiar/run")
 def ejecutar_hsh_cambiar(
     request: Request,
