@@ -19,7 +19,7 @@ if AUTOADA_DIR not in sys.path:
     sys.path.insert(0, AUTOADA_DIR)
 
 # --- Importa tus rutas ---
-from routes import login_routes, importar_routes, convertir_routes, menu_routes, buscar_routes, hsh_routes
+from routes import login_routes, importar_routes, convertir_routes, menu_routes, buscar_routes, hsh_routes, jobs_routes
 
 # ============================================================
 # CREACIÓN DE LA APP
@@ -43,6 +43,7 @@ app.include_router(convertir_routes.router)
 app.include_router(buscar_routes.router)
 app.include_router(menu_routes.router)
 app.include_router(hsh_routes.router)
+app.include_router(jobs_routes.router)
 
 # ============================================================
 # RUTA RAÍZ
