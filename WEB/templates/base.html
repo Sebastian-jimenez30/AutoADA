@@ -92,7 +92,15 @@
               <ul class="accordion-panel">
                 {% for option in section['items'] %}
                   {% set disabled = option['route'] is none %}
-                  {% set href = (not disabled) and request.url_for(option['route']) %}
+                  {% set has_route = false %}
+                  {% if not disabled %}
+                    {% for r in request.app.router.routes %}
+                      {% if r.name == option['route'] %}
+                        {% set has_route = true %}
+                      {% endif %}
+                    {% endfor %}
+                  {% endif %}
+                  {% set href = (not disabled and has_route) and request.url_for(option['route']) %}
                   <li>
                     <a href="{{ href if href else 'javascript:void(0);' }}"
                        class="accordion-link {% if active_page == option['key'] %}is-active{% endif %} {{ 'is-disabled' if disabled }}"
