@@ -112,8 +112,8 @@ def get_empresas() -> list[str]:
 
 
 def get_dominios() -> list[str]:
-    # Dominio fijo (coherente con desktop, SCADA CC)
-    return ["CC"]
+    # Dominio fijo para jobs: QADS (SCADA)
+    return ["QADS"]
 
 
 def crear_senales_pipeline(
@@ -137,7 +137,7 @@ def crear_senales_pipeline(
         )
 
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
-    dominio = "CC"
+    dominio = "QADS"
 
     yield f"Iniciando creación de señales para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
     summary_line = _summary_line(f"{empresa}: proceso iniciado")
