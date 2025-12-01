@@ -29,6 +29,8 @@ if AUTOADA_DIR not in sys.path:
     sys.path.insert(0, AUTOADA_DIR)
 
 SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
+# Ajustar ruta explícita al servers.json del árbol AutoADA (el resolver original usa get_resource_path relativo al cwd).
+SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
 
 
 @dataclass
@@ -136,6 +138,7 @@ def crear_senales_pipeline(
             extra=extra or {},
         )
 
+    empresa = (empresa or "").strip().upper()
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
     dominio = "QA"
 
