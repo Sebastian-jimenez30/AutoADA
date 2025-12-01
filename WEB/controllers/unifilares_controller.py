@@ -185,7 +185,8 @@ def validar_unifilares_pipeline(
 
     if actualizar:
         # Importar SCADA (solo sca) para la empresa/dominio
-        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "unifilares_validar")
+        # Usar el perfil de importación de escritorio (incluye SCADA + ODS para unifilares)
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca,ods", "--usecase", "unifilares_validar")
         rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
         if rc_import != 0:
             msg = f"Importación SCADA falló (rc={rc_import})."
