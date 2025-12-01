@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const fileDownloadBase = form.dataset.fileDownload || "";
   const actualizarInput = document.getElementById("actualizarFlag");
   const actualizarBtn = document.getElementById("actualizarBtn");
+  let updateFormData = null;
   const piUrl = form.dataset.piUrl || "";
   const confirmUrl = form.dataset.confirmUrl || "";
   const confirmModal = document.getElementById("confirmModal");
@@ -818,7 +819,8 @@ const hideConfirmModal = () => {
       logOutput.textContent = "";
     }
 
-    const formData = new FormData(form);
+    const formData = updateFormData || new FormData(form);
+    updateFormData = null;
 
     let response;
     try {
@@ -947,9 +949,15 @@ const hideConfirmModal = () => {
       if (aplicarInput) {
         aplicarInput.value = "";
       }
-      if (actualizarInput) {
-        actualizarInput.value = "1";
-      }
+      // Armar FormData mínimo solo con empresa/dominio y flag actualizar
+      const fd = new FormData();
+      const empresaField = form.elements["empresa"];
+      const dominioField = form.elements["dominio"];
+      if (empresaField && empresaField.value) fd.append("empresa", empresaField.value);
+      if (dominioField && dominioField.value) fd.append("dominio", dominioField.value);
+      fd.append("actualizar", "1");
+      updateFormData = fd;
+
       runApply = false;
       actualizarBtn.disabled = true;
       if (verificarBtn) verificarBtn.disabled = true;
