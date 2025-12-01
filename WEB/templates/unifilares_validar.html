@@ -56,17 +56,13 @@
                    required>
           </div>
 
-          <label class="checkbox">
-            <input type="checkbox" id="actualizar" name="actualizar">
-            <span>Actualizar BD (importar SCADA antes de validar)</span>
-          </label>
-
           <p class="form-help-text">
-            Selecciona empresa y dominio como en la app de escritorio. Si marcas “Actualizar BD”, se sincroniza SCADA antes de validar los unifilares.
+            Selecciona empresa y dominio como en la app de escritorio. Usa “Actualizar BD” para sincronizar SCADA antes de validar los unifilares.
           </p>
         </div>
 
         <div class="form-right">
+          <button type="button" class="btn btn-secondary" id="actualizarBtn" name="actualizar">Actualizar BD</button>
           <button type="button" class="btn btn-primary" id="verificarBtn">Validar</button>
         </div>
       </div>
