@@ -35,7 +35,7 @@ def listar_rtus(empresa: str, search: str | None = None, limit: int = Query(500,
 
 
 @router.post("/consultar/rtu/actualizar")
-def actualizar_rtu_dataset(empresa: str):
+def actualizar_rtu_dataset(empresa: str = Form(...)):
     if not empresa:
         raise HTTPException(status_code=400, detail="Empresa requerida.")
 
@@ -46,7 +46,10 @@ def actualizar_rtu_dataset(empresa: str):
 
 
 @router.post("/consultar/rtu/run")
-def ejecutar_consultar_rtu(empresa: str, rtus: list[str]):
+def ejecutar_consultar_rtu(
+    empresa: str = Form(...),
+    rtus: list[str] = Form(...),
+):
     if not empresa or not rtus:
         raise HTTPException(status_code=400, detail="Empresa y RTUs son requeridas.")
 
