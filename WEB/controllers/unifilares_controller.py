@@ -184,12 +184,11 @@ def validar_unifilares_pipeline(
         return rc if rc is not None else 0
 
     if actualizar:
-        # Importar SCADA (solo sca) para la empresa/dominio
-        # Usar el perfil de importación de escritorio (incluye SCADA + ODS para unifilares)
+        # Importar SCADA+ODS (perfil unifilares_validar) y convertir ambos
         cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca,ods", "--usecase", "unifilares_validar")
-        rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
+        rc_import = yield from _stream_step("IMPORT-SCADA/ODS", cmd_import)
         if rc_import != 0:
-            msg = f"Importación SCADA falló (rc={rc_import})."
+            msg = f"Importación SCADA/ODS falló (rc={rc_import})."
             extra_messages.append(msg)
             line = _summary_line(msg, "error")
             if line:
@@ -198,9 +197,45 @@ def validar_unifilares_pipeline(
             _store(payload["status"], payload["message"], extra={"details": extra_messages})
             yield _result_line(payload)
             return
-        line = _summary_line("Importación SCADA completada", "success")
+        line = _summary_line("Importación SCADA/ODS completada", "success")
         if line:
-            extra_messages.append("Importación SCADA completada")
+            extra_messages.append("Importación SCADA/ODS completada")
+            yield line
+
+        # Convertir SCADA
+        cmd_convert_sca = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+        rc_convert_sca = yield from _stream_step("CONVERT-SCADA", cmd_convert_sca)
+        if rc_convert_sca != 0:
+            msg = f"Conversión SCADA falló (rc={rc_convert_sca})."
+            extra_messages.append(msg)
+            line = _summary_line(msg, "error")
+            if line:
+                yield line
+            payload = {"status": "ERROR", "message": msg}
+            _store(payload["status"], payload["message"], extra={"details": extra_messages})
+            yield _result_line(payload)
+            return
+        line = _summary_line("Conversión SCADA completada", "success")
+        if line:
+            extra_messages.append("Conversión SCADA completada")
+            yield line
+
+        # Convertir ODS
+        cmd_convert_ods = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "ods")
+        rc_convert_ods = yield from _stream_step("CONVERT-ODS", cmd_convert_ods)
+        if rc_convert_ods != 0:
+            msg = f"Conversión ODS falló (rc={rc_convert_ods})."
+            extra_messages.append(msg)
+            line = _summary_line(msg, "error")
+            if line:
+                yield line
+            payload = {"status": "ERROR", "message": msg}
+            _store(payload["status"], payload["message"], extra={"details": extra_messages})
+            yield _result_line(payload)
+            return
+        line = _summary_line("Conversión ODS completada", "success")
+        if line:
+            extra_messages.append("Conversión ODS completada")
             yield line
 
     # Si solo se pidió actualizar y no hay archivos, terminar aquí
