@@ -35,29 +35,26 @@ def ejecutar_unifilares_validar(
     empresa: str = Form(...),
     dominio: str = Form(...),
     actualizar: str | None = Form(None),
-    archivos: list[UploadFile] = File(...),
+    archivos: list[UploadFile] | None = File(None),
 ):
-    if not archivos or not isinstance(archivos, list):
-        raise HTTPException(status_code=400, detail="Debes subir al menos un archivo.")
-
     stored_paths: list[str] = []
     os.makedirs(unifilares_controller.UNIFILARES_UPLOAD, exist_ok=True)
-    for archivo in archivos:
-        if not archivo or not archivo.filename:
-            continue
-        extension = Path(archivo.filename).suffix.lower()
-        # Aceptamos cualquier extensión típica de unifilar (dwg/dxf/json/etc) o sin filtro estricto
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension or "", dir=unifilares_controller.UNIFILARES_UPLOAD) as tmp_file:
-            archivo.file.seek(0)
-            shutil.copyfileobj(archivo.file, tmp_file)
-            stored_paths.append(tmp_file.name)
-        try:
-            archivo.file.close()
-        except Exception:
-            pass
-
-    if not stored_paths:
-        raise HTTPException(status_code=400, detail="No fue posible almacenar los archivos para su procesamiento.")
+    if archivos:
+        for archivo in archivos:
+            if not archivo or not archivo.filename:
+                continue
+            extension = Path(archivo.filename).suffix.lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix=extension or "", dir=unifilares_controller.UNIFILARES_UPLOAD) as tmp_file:
+                archivo.file.seek(0)
+                shutil.copyfileobj(archivo.file, tmp_file)
+                stored_paths.append(tmp_file.name)
+            try:
+                archivo.file.close()
+            except Exception:
+                pass
+    # si no hay archivos, permitimos continuar solo si actualizar está presente
+    if not stored_paths and not actualizar:
+        raise HTTPException(status_code=400, detail="Debes subir al menos un archivo o elegir actualizar BD.")
 
     actualizar_flag = bool(actualizar)
 

@@ -151,8 +151,8 @@ def validar_unifilares_pipeline(
         _store(payload["status"], payload["message"])
         yield _result_line(payload)
         return
-    if not archivos:
-        payload = {"status": "ERROR", "message": "Debes adjuntar al menos un archivo unifilar."}
+    if not archivos and not actualizar:
+        payload = {"status": "ERROR", "message": "Debes adjuntar al menos un archivo unifilar o ejecutar actualizar BD."}
         _store(payload["status"], payload["message"])
         yield _result_line(payload)
         return
@@ -201,6 +201,20 @@ def validar_unifilares_pipeline(
         if line:
             extra_messages.append("Importación SCADA completada")
             yield line
+
+    # Si solo se pidió actualizar y no hay archivos, terminar aquí
+    if actualizar and not archivos:
+        status = "SUCCESS"
+        message = "Actualización de datos completada."
+        line = _summary_line(message, "success")
+        if line:
+            extra_messages.append(message)
+            yield line
+        files: list[str] = []
+        _store(status, message, files=files, extra={"details": extra_messages})
+        payload = {"status": status, "message": message, "files": files, "details": extra_messages}
+        yield _result_line(payload)
+        return
 
     # Ejecutar validación de unifilares
     cmd_validar = build_cmd("scripts.Validacion_unifilares", "--archivos", *archivos, "--empresa", empresa)

@@ -34,6 +34,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultBaseUrl =
     form.dataset.resultUrl || "/buscar/key/result/data";
   const fileDownloadBase = form.dataset.fileDownload || "";
+  const actualizarInput = document.getElementById("actualizarFlag");
+  const actualizarBtn = document.getElementById("actualizarBtn");
   const piUrl = form.dataset.piUrl || "";
   const confirmUrl = form.dataset.confirmUrl || "";
   const confirmModal = document.getElementById("confirmModal");
@@ -927,12 +929,38 @@ const hideConfirmModal = () => {
       if (aplicarInput) {
         aplicarInput.value = "";
       }
+      if (actualizarInput) {
+        actualizarInput.value = "";
+      }
       runApply = false;
       ejecutarBtn && (ejecutarBtn.disabled = true);
       verificarBtn.disabled = true;
       await launchRun();
       ejecutarBtn && (ejecutarBtn.disabled = false);
       verificarBtn.disabled = false;
+      setParamsVisibility(false);
+    });
+  }
+  if (actualizarBtn) {
+    actualizarBtn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      if (aplicarInput) {
+        aplicarInput.value = "";
+      }
+      if (actualizarInput) {
+        actualizarInput.value = "1";
+      }
+      runApply = false;
+      actualizarBtn.disabled = true;
+      if (verificarBtn) verificarBtn.disabled = true;
+      if (ejecutarBtn) ejecutarBtn.disabled = true;
+      await launchRun();
+      actualizarBtn.disabled = false;
+      if (verificarBtn) verificarBtn.disabled = false;
+      if (ejecutarBtn) ejecutarBtn.disabled = false;
+      if (actualizarInput) {
+        actualizarInput.value = "";
+      }
       setParamsVisibility(false);
     });
   }
