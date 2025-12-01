@@ -7,6 +7,7 @@ import socket
 import sys
 from dataclasses import dataclass, field
 from typing import Any, Generator, List, Optional
+from urllib.parse import quote
 
 from services.vault_service import VaultService
 from services.server_resolver import ServerResolver
@@ -126,16 +127,18 @@ def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict
     items: list[str] = []
     if not os.path.isfile(file_path):
         return {"empresa": empresa, "count": 0, "rtus": []}
-    try:
-        with open(file_path, newline="", encoding="utf-8") as fh:
+    def _read_with_encoding(enc: str):
+        with open(file_path, "r", encoding=enc, errors="ignore") as fh:
             reader = csv.reader(fh)
             header = next(reader, [])
             header_lower = [h.strip().lower() for h in header]
+
             def _idx(*names):
                 for n in names:
                     if n in header_lower:
                         return header_lower.index(n)
                 return None
+
             rtu_idx = _idx("rtu/sas", "rtu", "#record")
             name_idx = _idx("name", "nombre", "rtu_abbrev")
             for row in reader:
@@ -147,6 +150,35 @@ def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict
                 name = (row[name_idx] or "").strip() if name_idx is not None and name_idx < len(row) else ""
                 label = f"{rtu}: {name}" if name else rtu
                 items.append(label)
+
+    try:
+        _read_with_encoding("utf-8-sig")
+        if not items:
+            _read_with_encoding("cp1252")
+        if not items:
+            # último intento con delimitador ';'
+            with open(file_path, "r", encoding="cp1252", errors="ignore") as fh:
+                reader = csv.reader(fh, delimiter=";")
+                header = next(reader, [])
+                header_lower = [h.strip().lower() for h in header]
+
+                def _idx2(*names):
+                    for n in names:
+                        if n in header_lower:
+                            return header_lower.index(n)
+                    return None
+
+                rtu_idx = _idx2("rtu/sas", "rtu", "#record")
+                name_idx = _idx2("name", "nombre", "rtu_abbrev")
+                for row in reader:
+                    if rtu_idx is None or rtu_idx >= len(row):
+                        continue
+                    rtu = (row[rtu_idx] or "").strip()
+                    if not rtu:
+                        continue
+                    name = (row[name_idx] or "").strip() if name_idx is not None and name_idx < len(row) else ""
+                    label = f"{rtu}: {name}" if name else rtu
+                    items.append(label)
     except Exception:
         return {"empresa": empresa, "count": 0, "rtus": []}
 
@@ -250,7 +282,7 @@ def load_consultar_rtu_result_preview(sheet: str | None = None, limit: int = 500
         "total": 0,
         "has_more": False,
         "limit": limit,
-        "download_url": result.files[0] if result.files else None,
+        "download_url": None,
     }
 
     if not report_path:
@@ -299,7 +331,7 @@ def load_consultar_rtu_result_preview(sheet: str | None = None, limit: int = 500
                 has_more = True
                 break
 
-        download_url = f"/consultar/rtu/result/download?path={report_path}"
+        download_url = f"/consultar/rtu/result/download?path={quote(report_path)}"
 
         base_payload.update(
             {
