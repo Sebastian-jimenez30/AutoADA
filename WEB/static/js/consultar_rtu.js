@@ -13,6 +13,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const actualizarUrl = "/consultar/rtu/actualizar";
   const listUrl = "/consultar/rtu/list";
   const resultDownloadBase = form.dataset.fileDownload || "/consultar/rtu/result/download";
+  const resultPanel = document.getElementById("resultPanel");
+  const resultHead = document.getElementById("resultTableHead");
+  const resultBody = document.getElementById("resultTableBody");
+  const resultEmpty = document.getElementById("resultEmptyState");
+  const downloadBtn = document.getElementById("resultDownloadBtn");
+  const resultMeta = document.getElementById("resultMeta");
 
   const logOutput = document.getElementById("logOutput");
   const statusBadge = document.getElementById("logStatus");
@@ -33,6 +39,68 @@ document.addEventListener("DOMContentLoaded", () => {
       const isActive = panel.dataset.panel === target;
       panel.classList.toggle("is-active", isActive);
     });
+  };
+
+  const renderResults = (data) => {
+    if (!resultPanel || !resultHead || !resultBody) return;
+    resultHead.innerHTML = "";
+    resultBody.innerHTML = "";
+    if (!data || !data.columns || data.columns.length === 0 || !data.rows) {
+      resultPanel.classList.add("is-empty");
+      if (resultEmpty) resultEmpty.textContent = data?.message || "Sin resultados.";
+      return;
+    }
+    resultPanel.classList.remove("is-empty");
+    const trHead = document.createElement("tr");
+    data.columns.forEach((col) => {
+      const th = document.createElement("th");
+      th.textContent = col;
+      trHead.appendChild(th);
+    });
+    resultHead.appendChild(trHead);
+
+    data.rows.forEach((row) => {
+      const tr = document.createElement("tr");
+      data.columns.forEach((col) => {
+        const td = document.createElement("td");
+        const val = row[col];
+        td.textContent = val === null || val === undefined ? "" : val;
+        tr.appendChild(td);
+      });
+      resultBody.appendChild(tr);
+    });
+    if (downloadBtn) {
+      downloadBtn.disabled = !data.download_url;
+      downloadBtn.dataset.href = data.download_url || "";
+    }
+    if (resultMeta) {
+      resultMeta.textContent = `${data.active_sheet || ""} (${data.total || data.rows.length} registros${data.has_more ? " +" : ""})`;
+    }
+  };
+
+  const loadResults = async () => {
+    try {
+      const resp = await fetch(form.dataset.resultUrl || "/consultar/rtu/result", { cache: "no-store" });
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      renderResults(data);
+    } catch (err) {
+      if (resultPanel) {
+        resultPanel.classList.add("is-empty");
+      }
+      if (resultEmpty) {
+        resultEmpty.textContent = "No hay resultados disponibles.";
+      }
+      if (downloadBtn) {
+        downloadBtn.disabled = true;
+        downloadBtn.dataset.href = "";
+      }
+      if (resultMeta) {
+        resultMeta.textContent = "";
+      }
+    }
   };
 
   const setStatus = (text, variant = "muted") => {
@@ -268,6 +336,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await runConsulta();
       consultarBtn.disabled = false;
       actualizarBtn && (actualizarBtn.disabled = false);
+      await loadResults();
     });
   }
 
@@ -276,3 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
     loadList();
   }
 });
+        if (result && result.status === "SUCCESS") {
+          await loadResults();
+          activatePanel("results");
+        }

@@ -128,13 +128,24 @@ def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict
         return {"empresa": empresa, "count": 0, "rtus": []}
     try:
         with open(file_path, newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
+            reader = csv.reader(fh)
+            header = next(reader, [])
+            header_lower = [h.strip().lower() for h in header]
+            def _idx(*names):
+                for n in names:
+                    if n in header_lower:
+                        return header_lower.index(n)
+                return None
+            rtu_idx = _idx("rtu/sas", "rtu", "#record")
+            name_idx = _idx("name", "nombre", "rtu_abbrev")
             for row in reader:
-                rtu = row.get("RTU/SAS") or row.get("RTU") or row.get("#record") or ""
-                name = row.get("Name") or row.get("Nombre") or ""
+                if rtu_idx is None or rtu_idx >= len(row):
+                    continue
+                rtu = (row[rtu_idx] or "").strip()
                 if not rtu:
                     continue
-                label = f"{rtu}: {name}".strip()
+                name = (row[name_idx] or "").strip() if name_idx is not None and name_idx < len(row) else ""
+                label = f"{rtu}: {name}" if name else rtu
                 items.append(label)
     except Exception:
         return {"empresa": empresa, "count": 0, "rtus": []}
@@ -172,6 +183,8 @@ def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str]) -> Generator[
         yield _result_line({"status": "ERROR", "message": f"No se pudo construir el entorno: {exc}"})
         return
 
+    yield _summary_line(f"{empresa}: consulta iniciada", "info")
+
     rtus_arg = ", ".join(selected_rtus)
     cmd = build_cmd("scripts.consultar_rtu", "--empresa", empresa, "--rtus", rtus_arg)
     report_holder: dict[str, str | None] = {"path": None}
@@ -194,6 +207,7 @@ def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str]) -> Generator[
 
     status = "SUCCESS" if rc == 0 else "ERROR"
     message = "Consulta RTU lista" if rc == 0 else "Consulta RTU terminó con errores."
+    yield _summary_line(message, "success" if status == "SUCCESS" else "error")
     files: list[str] = []
     if report_holder.get("path"):
         p = report_holder["path"]
@@ -203,3 +217,103 @@ def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str]) -> Generator[
             files.append(os.path.normpath(p))
     last_consultar_rtu_result = ConsultarResult(status=status, message=message, files=files, extra={})
     yield _result_line({"status": status, "message": message, "files": files})
+
+
+def get_last_consultar_rtu_result() -> ConsultarResult | None:
+    return last_consultar_rtu_result
+
+
+def load_consultar_rtu_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_consultar_rtu_result
+    if result is None:
+        return None
+
+    report_path = None
+    for f in result.files or []:
+        if str(f).lower().endswith((".xlsx", ".xlsm", ".xls")):
+            report_path = f
+            break
+    if report_path and not os.path.isabs(report_path):
+        report_path = os.path.normpath(os.path.join(AUTOADA_DIR, report_path))
+    if report_path and not os.path.isfile(report_path):
+        report_path = None
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": result.files[0] if result.files else None,
+    }
+
+    if not report_path:
+        return base_payload
+
+    from openpyxl import load_workbook as _lb
+
+    wb = _lb(report_path, read_only=True, data_only=True)
+    try:
+        sheet_names = list(wb.sheetnames)
+        if not sheet_names:
+            return base_payload
+        active_sheet = sheet if sheet in sheet_names else sheet_names[0]
+        ws = wb[active_sheet]
+        rows_iter = ws.iter_rows(values_only=True)
+        try:
+            headers_raw = next(rows_iter)
+        except StopIteration:
+            base_payload["sheets"] = sheet_names
+            base_payload["active_sheet"] = active_sheet
+            return base_payload
+
+        headers: list[str] = []
+        for idx, header in enumerate(headers_raw or (), start=1):
+            if isinstance(header, str):
+                clean = header.strip()
+                headers.append(clean if clean else f"Columna {idx}")
+            elif header is None:
+                headers.append(f"Columna {idx}")
+            else:
+                headers.append(str(header))
+
+        preview_rows: list[dict[str, Any]] = []
+        row_count = 0
+        has_more = False
+
+        for row in rows_iter:
+            row_count += 1
+            row_dict: dict[str, Any] = {}
+            for col_idx, header in enumerate(headers):
+                value = row[col_idx] if col_idx < len(row) else None
+                row_dict[header] = value
+            if row_count <= limit:
+                preview_rows.append(row_dict)
+            else:
+                has_more = True
+                break
+
+        download_url = f"/consultar/rtu/result/download?path={report_path}"
+
+        base_payload.update(
+            {
+                "sheets": sheet_names,
+                "active_sheet": active_sheet,
+                "columns": headers,
+                "rows": preview_rows,
+                "total": row_count,
+                "has_more": has_more,
+                "limit": limit,
+                "download_url": download_url,
+                "report_path": report_path,
+            }
+        )
+        return base_payload
+    finally:
+        wb.close()

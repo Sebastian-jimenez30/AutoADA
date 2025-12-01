@@ -79,3 +79,14 @@ def descargar_consultar_rtu_result(path: str):
         filename=resolved.name,
         media_type="application/octet-stream",
     )
+
+
+@router.get("/consultar/rtu/result")
+def obtener_consultar_rtu_result(
+    sheet: str | None = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+):
+    data = consultar_controller.load_consultar_rtu_result_preview(sheet=sheet, limit=limit)
+    if data is None:
+        raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
+    return data
