@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
+{% import "components/summary_panel.html" as summary_components %}
+
+{% block content %}
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+    <div class="buscarkey-header__title">
+      <h2>Pruebas - ITCOSAS v1</h2>
+    </div>
+  </header>
+
+  <!-- PARÁMETROS -->
+  <section class="buscarkey-form card params-card" id="paramsCard">
+    <h3>Parámetros de ejecución</h3>
+    <form
+      id="buscarKeyForm"
+      method="post"
+      action="/pruebas/itcosas-v1/run"
+      enctype="multipart/form-data"
+      data-run-url="/pruebas/itcosas-v1/run"
+      data-result-url="/pruebas/itcosas-v1/result"
+      data-file-download="/pruebas/itcosas-v1/result/download"
+    >
+      <div class="form-layout">
+        <div class="form-left">
+          <div class="form-field">
+            <label for="empresa">Empresa</label>
+            <select id="empresa" name="empresa" required>
+              <option value="">Selecciona la empresa...</option>
+              {% for emp in empresas %}
+                <option value="{{ emp }}">{{ emp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="dominio">Dominio</label>
+            <select id="dominio" name="dominio" required>
+              <option value="">Selecciona el dominio...</option>
+              {% for dom in dominios %}
+                <option value="{{ dom }}">{{ dom }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="fecha">Fecha (YYYY-MM-DD)</label>
+            <input type="text" id="fecha" name="fecha" placeholder="YYYY-MM-DD" required>
+          </div>
+
+          <div class="form-field">
+            <label for="hora_inicio">Hora inicio (HH:MM:SS.mmm)</label>
+            <input type="text" id="hora_inicio" name="hora_inicio" placeholder="HH:MM:SS.mmm" required>
+          </div>
+
+          <div class="form-field">
+            <label for="hora_fin">Hora fin (HH:MM:SS.mmm)</label>
+            <input type="text" id="hora_fin" name="hora_fin" placeholder="HH:MM:SS.mmm" required>
+          </div>
+
+          <p class="form-help-text">
+            Se importará y convertirá SCADA automáticamente con el perfil de pruebas antes de ejecutar el pipeline.
+          </p>
+        </div>
+
+        <div class="form-right">
+          <div class="form-field form-field--full">
+            <label for="checklist">Checklist</label>
+            <input type="file" id="checklist" name="checklist" accept=".xlsx,.xlsm,.xls" required>
+          </div>
+          <div class="form-field form-field--full">
+            <label for="eventos">Eventos diario</label>
+            <input type="file" id="eventos" name="eventos" accept=".xlsx,.xlsm,.xls" required>
+          </div>
+          <div class="form-field form-field--full">
+            <label for="varexp">Varexp</label>
+            <input type="file" id="varexp" name="varexp" accept=".xlsx,.xlsm,.xls" required>
+          </div>
+          <div class="form-field form-field--full">
+            <label for="tmw">TMW Gateway</label>
+            <input type="file" id="tmw" name="tmw" accept=".xlsx,.xlsm,.xls" required>
+          </div>
+
+          <button type="button" class="btn btn-primary" id="verificarBtn">Ejecutar</button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- OUTPUT -->
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">Resumen</button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">Consola</button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">Resultados</button>
+    </div>
+
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+
+      <div class="output-panel" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta",
+          file_list_id="resultFileList",
+          details_id="resultDetails"
+        ) }}
+      </div>
+    </div>
+  </section>
+</section>
+
+<script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+{% endblock %}
