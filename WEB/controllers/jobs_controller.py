@@ -43,6 +43,7 @@ class JobsCrearResult:
 
 last_jobs_crear_result: Optional[JobsCrearResult] = None
 last_jobs_eliminar_result: Optional[JobsCrearResult] = None
+last_jobs_cambiar_result: Optional[JobsCrearResult] = None
 
 
 def _summary_line(message: str, variant: str = "info") -> str | None:
@@ -601,6 +602,203 @@ def load_jobs_eliminar_result_preview(limit: int = 500) -> dict[str, Any] | None
         {
             "sheets": ["Delete_scada.csv"],
             "active_sheet": "Delete_scada.csv",
+            "columns": ["line"],
+            "rows": rows,
+            "total": total,
+            "has_more": has_more,
+            "download_url": download_url,
+        }
+    )
+    return base_payload
+
+
+def cambiar_nombre_pipeline(
+    empresa: str,
+    actualizar: bool,
+    archivo_path: str,
+    archivo_nombre: str | None,
+) -> Generator[str, None, None]:
+    """Flujo web para Jobs -> Cambiar nombre (equivalente al handler desktop)."""
+    global last_jobs_cambiar_result
+    last_jobs_cambiar_result = None
+    extra_messages: list[str] = []
+
+    def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_jobs_cambiar_result
+        last_jobs_cambiar_result = JobsCrearResult(
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    empresa = (empresa or "").strip().upper()
+    archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
+    dominio = "QA"
+
+    yield f"Iniciando cambio de nombre para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
+    line = _summary_line(f"{empresa}: proceso iniciado")
+    if line:
+        extra_messages.append(f"{empresa}: proceso iniciado")
+        yield line
+
+    if not empresa:
+        payload = {"status": "ERROR", "message": "Debes seleccionar una empresa válida."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+    if not archivo_path or not os.path.isfile(archivo_path):
+        payload = {"status": "ERROR", "message": "No se pudo acceder al archivo de entrada."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        message = f"No se pudo construir el entorno: {exc}"
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    servidor = SERVER_RESOLVER.generar_server(empresa, dominio)
+    if not servidor:
+        message = "No se pudo resolver el servidor para la empresa seleccionada."
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    def _stream_step(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    if actualizar:
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_crear_senales")
+        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs")
+
+        rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
+        if rc_import != 0:
+            msg = f"Importación SCADA falló (rc={rc_import})."
+            extra_messages.append(msg)
+            line = _summary_line(msg, "error")
+            if line:
+                yield line
+            payload = {"status": "ERROR", "message": msg}
+            _store(payload["status"], payload["message"], extra={"details": extra_messages})
+            yield _result_line(payload)
+            return
+
+        line = _summary_line("Importación SCADA completada", "success")
+        if line:
+            extra_messages.append("Importación SCADA completada")
+            yield line
+
+        rc_convert = yield from _stream_step("CONVERT-JOBS", cmd_convert)
+        if rc_convert != 0:
+            msg = f"Conversión jobs falló (rc={rc_convert})."
+            extra_messages.append(msg)
+            line = _summary_line(msg, "error")
+            if line:
+                yield line
+            payload = {"status": "ERROR", "message": msg}
+            _store(payload["status"], payload["message"], extra={"details": extra_messages})
+            yield _result_line(payload)
+            return
+
+        line = _summary_line("Conversión jobs completada", "success")
+        if line:
+            extra_messages.append("Conversión jobs completada")
+            yield line
+
+    # Ejecución de cambio de nombre
+    cmd_change = build_cmd("scripts.cambiar_nombre_senales_scada", archivo_path, empresa)
+    rc_change = yield from _stream_step("CAMBIO-NOMBRE", cmd_change)
+
+    status = "SUCCESS" if rc_change == 0 else "ERROR"
+    message = "Cambio de nombre completado." if rc_change == 0 else f"Cambio de nombre finalizó con errores (rc={rc_change})."
+    line = _summary_line(message, "success" if status == "SUCCESS" else "error")
+    if line:
+        extra_messages.append(message)
+        yield line
+
+    # Recopilar archivos generados
+    name_dir = os.path.join(AUTOADA_DIR, "out", "Name")
+    files: list[str] = []
+    expected = [os.path.join(name_dir, "change_key.csv")]
+    for path in expected:
+        if os.path.isfile(path):
+            files.append(os.path.normpath(path))
+    if os.path.isdir(name_dir):
+        for fname in os.listdir(name_dir):
+            fpath = os.path.join(name_dir, fname)
+            if os.path.isfile(fpath):
+                files.append(os.path.normpath(fpath))
+
+    extra_payload: dict[str, Any] = {"details": extra_messages}
+    _store(status, message, files=files, extra=extra_payload)
+    payload = {"status": status, "message": message, "files": files, "details": extra_messages}
+    yield _result_line(payload)
+
+
+def get_last_jobs_cambiar_result() -> JobsCrearResult | None:
+    return last_jobs_cambiar_result
+
+
+def load_jobs_cambiar_result_preview(limit: int = 500) -> dict[str, Any] | None:
+    result = last_jobs_cambiar_result
+    if result is None:
+        return None
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+    }
+
+    csv_path = None
+    for f in result.files or []:
+        if str(f).lower().endswith("change_key.csv"):
+            csv_path = f
+            break
+    if not csv_path or not os.path.isfile(csv_path):
+        return base_payload
+
+    rows: list[dict[str, Any]] = []
+    total = 0
+    has_more = False
+    try:
+        with open(csv_path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                total += 1
+                if total <= limit:
+                    rows.append({"line": line.strip()})
+                else:
+                    has_more = True
+                    break
+    except Exception:
+        return base_payload
+
+    download_url = f"/jobs/cambiar-nombre/result/download?path={quote(csv_path)}"
+    base_payload.update(
+        {
+            "sheets": ["change_key.csv"],
+            "active_sheet": "change_key.csv",
             "columns": ["line"],
             "rows": rows,
             "total": total,
