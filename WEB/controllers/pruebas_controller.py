@@ -236,8 +236,8 @@ def itcosas_v1_pipeline(
         except Exception:
             pass
 
-    # Importar y convertir SCADA (perfil de pruebas)
-    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_itcosas_v1")
+    # Importar SCADA (perfil pruebas_pyp)
+    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp")
     rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
     if rc_import != 0:
         msg = f"Importación SCADA falló (rc={rc_import})."
@@ -254,25 +254,8 @@ def itcosas_v1_pipeline(
         extra_messages.append("Importación SCADA completada")
         yield line
 
-    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
-    rc_convert = yield from _stream_step("CONVERT-SCADA", cmd_convert)
-    if rc_convert != 0:
-        msg = f"Conversión SCADA falló (rc={rc_convert})."
-        extra_messages.append(msg)
-        line = _summary_line(msg, "error")
-        if line:
-            yield line
-        payload = {"status": "ERROR", "message": msg}
-        _store(payload["status"], payload["message"], extra={"details": extra_messages})
-        yield _result_line(payload)
-        return
-    line = _summary_line("Conversión SCADA completada", "success")
-    if line:
-        extra_messages.append("Conversión SCADA completada")
-        yield line
-
     # Paso IOA
-    cmd_ioa = build_cmd("scripts.tmwgateway_varexp_to_csv", f"--tmwgateway={tmw}", f"--varexp={varexp}", f"--outdir={outdir}")
+    cmd_ioa = build_cmd("scripts.itcosas_v1_ioa", f"--tmwgateway={tmw}", f"--varexp={varexp}", f"--outdir={outdir}")
     rc_ioa = yield from _stream_step("IOA", cmd_ioa)
     if rc_ioa != 0:
         msg = "Paso IOA falló."
@@ -291,7 +274,7 @@ def itcosas_v1_pipeline(
 
     # Paso SOE Local
     cmd_soe_local = build_cmd(
-        "scripts.eventos_direcciones_to_soe",
+        "scripts.itcosas_v1_soe_local",
         f"--eventos={eventos}",
         f"--direcciones={artifacts['direcciones']}",
         f"--outdir={outdir}",
@@ -314,7 +297,7 @@ def itcosas_v1_pipeline(
 
     # Paso HIS (usa estaciones del checklist interno)
     cmd_his = build_cmd(
-        "scripts.his_soe",
+        "scripts.import_his_soe",
         empresa,
         "--station",
         "%",
@@ -344,7 +327,7 @@ def itcosas_v1_pipeline(
         yield line
 
     # Paso SOE Monarch
-    cmd_monarch = build_cmd("scripts.soe_monarch_v1", empresa, checklist, artifacts["his_data"])
+    cmd_monarch = build_cmd("scripts.pyp_soe_monarch", empresa, checklist, artifacts["his_data"])
     rc_monarch = yield from _stream_step("SOE-MONARCH", cmd_monarch)
     if rc_monarch != 0:
         msg = "SOE Monarch falló."
@@ -362,7 +345,7 @@ def itcosas_v1_pipeline(
         yield line
 
     # Paso Checklist final
-    cmd_checklist = build_cmd("scripts.checklist_v1", f"--checklist={checklist}", f"--outdir={outdir}")
+    cmd_checklist = build_cmd("scripts.pyp_checklist", f"--checklist={checklist}", f"--outdir={outdir}")
     rc_checklist = yield from _stream_step("CHECKLIST", cmd_checklist)
     if rc_checklist != 0:
         msg = "Checklist final falló."
