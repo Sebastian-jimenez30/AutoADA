@@ -113,7 +113,8 @@ def get_empresas() -> list[str]:
 
 
 def get_dominios() -> list[str]:
-    return list(SERVER_RESOLVER.opciones_dominio_view().keys())
+    # Dominio fijo para pruebas v1: CC
+    return ["CC"]
 
 
 def _validate_datetime(fecha: str, hora: str) -> bool:
@@ -150,7 +151,7 @@ def itcosas_v1_pipeline(
         )
 
     empresa = (empresa or "").strip().upper()
-    dominio = (dominio or "").strip().upper()
+    dominio = "CC"
 
     if not empresa or not dominio:
         payload = {"status": "ERROR", "message": "Debes seleccionar empresa y dominio."}

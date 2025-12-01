@@ -36,28 +36,18 @@
           </div>
 
           <div class="form-field">
-            <label for="dominio">Dominio</label>
-            <select id="dominio" name="dominio" required>
-              <option value="">Selecciona el dominio...</option>
-              {% for dom in dominios %}
-                <option value="{{ dom }}">{{ dom }}</option>
-              {% endfor %}
-            </select>
-          </div>
-
-          <div class="form-field">
             <label for="fecha">Fecha (YYYY-MM-DD)</label>
-            <input type="text" id="fecha" name="fecha" placeholder="YYYY-MM-DD" required>
+            <input type="date" id="fecha" name="fecha" required>
           </div>
 
           <div class="form-field">
             <label for="hora_inicio">Hora inicio (HH:MM:SS.mmm)</label>
-            <input type="text" id="hora_inicio" name="hora_inicio" placeholder="HH:MM:SS.mmm" required>
+            <input type="time" step="0.001" id="hora_inicio" name="hora_inicio" placeholder="HH:MM:SS.mmm" required>
           </div>
 
           <div class="form-field">
             <label for="hora_fin">Hora fin (HH:MM:SS.mmm)</label>
-            <input type="text" id="hora_fin" name="hora_fin" placeholder="HH:MM:SS.mmm" required>
+            <input type="time" step="0.001" id="hora_fin" name="hora_fin" placeholder="HH:MM:SS.mmm" required>
           </div>
 
           <p class="form-help-text">
@@ -82,9 +72,10 @@
             <label for="tmw">TMW Gateway</label>
             <input type="file" id="tmw" name="tmw" accept=".xlsx,.xlsm,.xls" required>
           </div>
-
-          <button type="button" class="btn btn-primary" id="verificarBtn">Ejecutar</button>
         </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" id="verificarBtn">Ejecutar</button>
       </div>
     </form>
   </section>
