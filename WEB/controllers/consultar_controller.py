@@ -130,7 +130,7 @@ def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict
         with open(file_path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
-                rtu = row.get("RTU/SAS") or row.get("RTU") or ""
+                rtu = row.get("RTU/SAS") or row.get("RTU") or row.get("#record") or ""
                 name = row.get("Name") or row.get("Nombre") or ""
                 if not rtu:
                     continue
