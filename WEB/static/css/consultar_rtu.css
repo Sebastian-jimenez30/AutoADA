@@ -1,0 +1,44 @@
+.rtu-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid #d9e1ec;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f8fbff;
+}
+
+.rtu-item {
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #d1d9e6;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 14px;
+  color: #1c2a3a;
+}
+
+.rtu-item:hover {
+  border-color: #5b8def;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
+.rtu-item.is-selected {
+  border-color: #1f6feb;
+  background: #e8f1ff;
+  box-shadow: 0 2px 8px rgba(31, 111, 235, 0.15);
+}
+
+.form-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+#buscadorRtu {
+  width: 100%;
+}

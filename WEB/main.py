@@ -29,6 +29,7 @@ from routes import (
     jobs_routes,
     pruebas_routes,
     unifilares_routes,
+    consultar_routes,
 )
 
 # ============================================================
@@ -56,6 +57,7 @@ app.include_router(hsh_routes.router)
 app.include_router(jobs_routes.router)
 app.include_router(unifilares_routes.router)
 app.include_router(pruebas_routes.router)
+app.include_router(consultar_routes.router)
 
 # ============================================================
 # RUTA RAÍZ

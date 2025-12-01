@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% import "components/console.html" as components %}
+{% import "components/result_panel.html" as result_components %}
+{% import "components/summary_panel.html" as summary_components %}
+
+{% block content %}
+<section class="buscarkey-wrapper">
+  <header class="buscarkey-header">
+    <div class="buscarkey-header__title">
+      <h2>Consultar RTU/SAS</h2>
+    </div>
+  </header>
+
+  <section class="buscarkey-form card params-card" id="paramsCard">
+    <h3>Parámetros de ejecución</h3>
+    <form
+      id="buscarKeyForm"
+      data-run-url="/consultar/rtu/run"
+      data-result-url="/consultar/rtu/result"
+      data-file-download="/consultar/rtu/result/download"
+    >
+      <div class="form-layout">
+        <div class="form-left">
+          <div class="form-field">
+            <label for="empresa">Empresa</label>
+            <select id="empresa" name="empresa" required>
+              <option value="">Selecciona la empresa...</option>
+              {% for emp in empresas %}
+                <option value="{{ emp }}">{{ emp }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-field form-field--full">
+            <label for="buscadorRtu">Buscar RTU/SAS</label>
+            <input type="text" id="buscadorRtu" placeholder="Filtra por nombre o número">
+          </div>
+          <div class="form-field form-field--full">
+            <label>RTU/SAS disponibles</label>
+            <div id="rtuList" class="rtu-list"></div>
+            <small id="rtuCount" class="form-help-text"></small>
+          </div>
+        </div>
+
+        <div class="form-right">
+          <div class="form-field form-field--full">
+            <p class="form-help-text">
+              Actualiza primero los datos SCADA para refrescar el listado de RTU/SAS. Selecciona una o varias y consulta el reporte.
+            </p>
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-secondary" id="actualizarRtuBtn">Actualizar datos</button>
+            <button type="button" class="btn btn-primary" id="verificarBtn">Consultar</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="buscarkey-output card">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">Resumen</button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">Consola</button>
+      <button type="button" class="output-tab" data-target="results" role="tab" aria-selected="false">Resultados</button>
+    </div>
+
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+
+      <div class="output-panel" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+
+      <div class="output-panel" data-panel="results">
+        {{ result_components.result_panel(
+          wrapper_id="resultPanel",
+          table_id="resultTable",
+          head_id="resultTableHead",
+          body_id="resultTableBody",
+          empty_id="resultEmptyState",
+          download_id="resultDownloadBtn",
+          meta_id="resultMeta",
+          file_list_id="resultFileList",
+          details_id="resultDetails"
+        ) }}
+      </div>
+    </div>
+  </section>
+</section>
+
+<script src="{{ url_for('static', path='js/consultar_rtu.js') }}"></script>
+<link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', path='css/consultar_rtu.css') }}">
+{% endblock %}
