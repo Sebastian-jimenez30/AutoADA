@@ -207,6 +207,21 @@ def itcosas_v1_pipeline(
         yield _result_line({"status": "ERROR", "message": message})
         return
 
+    # HIS hosts: fallback si el vault no los trae
+    his_fallback = {
+        "ITCO": ["itco1his01", "itco1his02"],
+        "TRA": ["itco1his01", "itco1his02"],
+        "REPS": ["rep1his01", "rep1his02"],
+        "REPP": ["rep1his01", "rep1his02"],
+    }
+    if "HIS_HOSTS" not in env:
+        hosts = his_fallback.get(empresa)
+        if hosts:
+            env["HIS_HOSTS"] = ",".join(hosts)
+            env["HIS_PRIMARY"] = hosts[0]
+            if len(hosts) > 1:
+                env["HIS_SECONDARY"] = hosts[1]
+
     outdir = os.path.join(OUT_ROOT, "pruebas")
     os.makedirs(outdir, exist_ok=True)
     artifacts = {
@@ -296,7 +311,8 @@ def itcosas_v1_pipeline(
         yield line
 
     # Paso HIS (usa estaciones del checklist interno)
-    cmd_his = build_cmd(
+    his_host = env.get("HIS_PRIMARY") or env.get("HIS_HOSTS", "").split(",")[0] if env.get("HIS_HOSTS") else None
+    his_args = [
         "scripts.import_his_soe",
         empresa,
         "--station",
@@ -309,7 +325,10 @@ def itcosas_v1_pipeline(
         hora_fin,
         "--outdir",
         outdir,
-    )
+    ]
+    if his_host:
+        his_args.extend(["--host", his_host])
+    cmd_his = build_cmd(*his_args)
     rc_his = yield from _stream_step("HIS", cmd_his)
     if rc_his != 0:
         msg = "Paso HIS falló."
