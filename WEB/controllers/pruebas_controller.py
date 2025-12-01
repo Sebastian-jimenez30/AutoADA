@@ -42,6 +42,7 @@ class PruebasResult:
 
 
 last_pruebas_itcosas_v1_result: Optional[PruebasResult] = None
+last_pruebas_itcosas_v2_result: Optional[PruebasResult] = None
 
 
 def _summary_line(message: str, variant: str = "info") -> str | None:
@@ -487,6 +488,412 @@ def load_pruebas_itcosas_v1_preview(sheet: str | None = None, limit: int = 500) 
                 "rows": preview_rows,
                 "total": row_count,
                 "has_more": has_more,
+                "download_url": download_url,
+                "report_path": report_path,
+            }
+        )
+        return base_payload
+    finally:
+        wb.close()
+
+
+def itcosas_v2_pipeline(
+    empresa: str,
+    dominio: str,
+    fecha: str,
+    hora_inicio: str,
+    hora_fin: str,
+    checklist: str,
+    soe_se: str,
+) -> Generator[str, None, None]:
+    """Pipeline web para ITCOSAS v2 (pruebas)."""
+    global last_pruebas_itcosas_v2_result
+    last_pruebas_itcosas_v2_result = None
+    extra_messages: list[str] = []
+
+    def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_pruebas_itcosas_v2_result
+        last_pruebas_itcosas_v2_result = PruebasResult(
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    empresa = (empresa or "").strip().upper()
+    dominio = "CC"
+
+    if not empresa:
+        payload = {"status": "ERROR", "message": "Debes seleccionar empresa."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    if not (_validate_datetime(fecha, hora_inicio) and _validate_datetime(fecha, hora_fin)):
+        payload = {"status": "ERROR", "message": "Fecha u hora en formato inválido."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    try:
+        t0 = datetime.strptime(f"{fecha} {hora_inicio}", "%Y-%m-%d %H:%M:%S.%f")
+        t1 = datetime.strptime(f"{fecha} {hora_fin}", "%Y-%m-%d %H:%M:%S.%f")
+        if t0 > t1:
+            payload = {"status": "ERROR", "message": "Hora inicio no puede ser mayor que hora fin."}
+            _store(payload["status"], payload["message"])
+            yield _result_line(payload)
+            return
+    except Exception:
+        payload = {"status": "ERROR", "message": "Fecha u hora con formato inválido."}
+        _store(payload["status"], payload["message"])
+        yield _result_line(payload)
+        return
+
+    required_files = {
+        "Checklist": checklist,
+        "SOE_SE": soe_se,
+    }
+    for label, path in required_files.items():
+        if not path or not os.path.isfile(path):
+            payload = {"status": "ERROR", "message": f"Falta archivo obligatorio: {label}"}
+            _store(payload["status"], payload["message"])
+            yield _result_line(payload)
+            return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        message = f"No se pudo construir el entorno: {exc}"
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    servidor = SERVER_RESOLVER.generar_server(empresa, dominio)
+    if not servidor:
+        message = "No se pudo resolver el servidor para la empresa/dominio seleccionados."
+        _store("ERROR", message)
+        yield _result_line({"status": "ERROR", "message": message})
+        return
+
+    his_fallback = {
+        "ITCO": ["itco1his01", "itco1his02"],
+        "TRA": ["itco1his01", "itco1his02"],
+        "REPS": ["rep1his01", "rep1his02"],
+        "REPP": ["rep1his01", "rep1his02"],
+    }
+    if "HIS_HOSTS" not in env:
+        hosts = his_fallback.get(empresa)
+        if hosts:
+            env["HIS_HOSTS"] = ",".join(hosts)
+            env["HIS_PRIMARY"] = hosts[0]
+            if len(hosts) > 1:
+                env["HIS_SECONDARY"] = hosts[1]
+
+    outdir = os.path.join(OUT_ROOT, "pruebas")
+    os.makedirs(outdir, exist_ok=True)
+    artifacts = {
+        "soe_local": os.path.join(outdir, "SOE_Local.csv"),
+        "his_data": os.path.join(outdir, "data.csv"),
+        "his_data_v2": os.path.join(outdir, "data-HIS.csv"),
+        "soe_monarch": os.path.join(outdir, "SOE_Monarch.csv"),
+        "soe_final": os.path.join(outdir, "SOE_completo.xlsx"),
+    }
+
+    def _stream_step(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    yield "Limpiando artefactos previos...\n"
+    for f in artifacts.values():
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except Exception:
+            pass
+    # Copiar SOE_SE al área de trabajo
+    try:
+        dst_soese = os.path.join(outdir, os.path.basename(soe_se))
+        if os.path.abspath(soe_se) != os.path.abspath(dst_soese):
+            shutil.copy2(soe_se, dst_soese)
+    except Exception as e:
+        msg = f"No se pudo copiar SOE_SE al área de trabajo: {e}"
+        _store("ERROR", msg)
+        yield _result_line({"status": "ERROR", "message": msg})
+        return
+
+    # Importar SCADA (perfil pruebas_pyp) y convertir SCADA
+    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp")
+    rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
+    if rc_import != 0:
+        msg = f"Importación SCADA falló (rc={rc_import})."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("Importación SCADA completada", "success")
+    if line:
+        extra_messages.append("Importación SCADA completada")
+        yield line
+
+    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+    rc_convert = yield from _stream_step("CONVERT-SCADA", cmd_convert)
+    if rc_convert != 0:
+        msg = f"Conversión SCADA falló (rc={rc_convert})."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("Conversión SCADA completada", "success")
+    if line:
+        extra_messages.append("Conversión SCADA completada")
+        yield line
+
+    # SOE Local v2
+    cmd_soe_local = build_cmd("scripts.itcosas_v2_soe_local", f"--input={dst_soese}", f"--outdir={outdir}")
+    rc_soe_local = yield from _stream_step("SOE-LOCAL-V2", cmd_soe_local)
+    if rc_soe_local != 0:
+        msg = "Paso SOE Local v2 falló."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("SOE_Local.csv (v2) generado", "success")
+    if line:
+        extra_messages.append("SOE_Local.csv (v2) generado")
+        yield line
+
+    # HIS (todas las estaciones si no hay lista)
+    his_host = env.get("HIS_PRIMARY") or env.get("HIS_HOSTS", "").split(",")[0] if env.get("HIS_HOSTS") else None
+    his_args = [
+        "scripts.import_his_soe",
+        empresa,
+        "--station",
+        "%",
+        "--fecha",
+        fecha,
+        "--hora_inicio",
+        hora_inicio,
+        "--hora_fin",
+        hora_fin,
+        "--outdir",
+        outdir,
+    ]
+    if his_host:
+        his_args.extend(["--host", his_host])
+    cmd_his = build_cmd(*his_args)
+    rc_his = yield from _stream_step("HIS", cmd_his)
+    if rc_his != 0:
+        msg = "Paso HIS falló."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    # Copiar data.csv -> data-HIS.csv
+    try:
+        if os.path.exists(artifacts["his_data"]):
+            shutil.copy2(artifacts["his_data"], artifacts["his_data_v2"])
+    except Exception as e:
+        extra_messages.append(f"No se pudo crear data-HIS.csv: {e}")
+    line = _summary_line("data.csv generado (HIS)", "success")
+    if line:
+        extra_messages.append("data.csv generado (HIS)")
+        yield line
+
+    # SOE Monarch v2
+    scada_dir = os.path.join(OUT_ROOT, empresa, "SCADA")
+    his_path = artifacts["his_data"] if os.path.exists(artifacts["his_data"]) else artifacts["his_data_v2"]
+    faltantes = []
+    for fname in ("32_10.csv", "10_4.csv", "19_1.csv"):
+        if not os.path.isfile(os.path.join(scada_dir, fname)):
+            faltantes.append(fname)
+    if faltantes:
+        msg = f"Faltan archivos SCADA: {', '.join(faltantes)}"
+        _store("ERROR", msg)
+        yield _result_line({"status": "ERROR", "message": msg})
+        return
+    if not his_path or not os.path.isfile(his_path):
+        msg = "No se encontró data.csv / data-HIS.csv en out/pruebas."
+        _store("ERROR", msg)
+        yield _result_line({"status": "ERROR", "message": msg})
+        return
+
+    cmd_monarch = build_cmd(
+        "scripts.itcosas_v2_soe_monarch",
+        empresa,
+        f"--scada={scada_dir}",
+        f"--his={his_path}",
+        f"--outdir={outdir}",
+        f"--checklist={checklist}",
+    )
+    rc_monarch = yield from _stream_step("SOE-MONARCH-V2", cmd_monarch)
+    if rc_monarch != 0:
+        msg = "SOE Monarch v2 falló."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("SOE_Monarch.csv (v2) generado", "success")
+    if line:
+        extra_messages.append("SOE_Monarch.csv (v2) generado")
+        yield line
+
+    # Checklist v2
+    cmd_checklist = build_cmd(
+        "scripts.itcosas_v2_checklist",
+        f"--checklist={checklist}",
+        f"--soe_local={artifacts['soe_local']}",
+        f"--soe_monarch={artifacts['soe_monarch']}",
+        f"--outdir={outdir}",
+    )
+    rc_checklist = yield from _stream_step("CHECKLIST-V2", cmd_checklist)
+    if rc_checklist != 0:
+        msg = "Checklist v2 falló."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("Checklist v2 completado", "success")
+    if line:
+        extra_messages.append("Checklist v2 completado")
+        yield line
+
+    files: list[str] = []
+    if os.path.isdir(outdir):
+        for fname in os.listdir(outdir):
+            fpath = os.path.join(outdir, fname)
+            if os.path.isfile(fpath):
+                files.append(os.path.normpath(fpath))
+
+    status = "SUCCESS"
+    message = "ITCOSAS v2 completado."
+    extra_payload: dict[str, Any] = {"details": extra_messages}
+    if artifacts["soe_final"] in files:
+        extra_payload["report_path"] = artifacts["soe_final"]
+    _store(status, message, files=files, extra=extra_payload)
+    payload = {"status": status, "message": message, "files": files, "details": extra_messages}
+    yield _result_line(payload)
+
+
+def get_last_pruebas_itcosas_v2_result() -> PruebasResult | None:
+    return last_pruebas_itcosas_v2_result
+
+
+def load_pruebas_itcosas_v2_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
+    result = last_pruebas_itcosas_v2_result
+    if result is None:
+        return None
+
+    report_path = None
+    if isinstance(result.extra, dict):
+        report_path = result.extra.get("report_path")
+    if report_path and not os.path.isabs(report_path):
+        report_path = os.path.normpath(os.path.join(AUTOADA_DIR, report_path))
+    if report_path and not os.path.isfile(report_path):
+        report_path = None
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": result.files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+    }
+
+    if not report_path or not os.path.isfile(report_path):
+        return base_payload
+
+    wb = load_workbook(report_path, read_only=True, data_only=True)
+    try:
+        sheet_names = list(wb.sheetnames)
+        if not sheet_names:
+            return base_payload
+
+        active_sheet = sheet if sheet in sheet_names else sheet_names[0]
+        ws = wb[active_sheet]
+        rows_iter = ws.iter_rows(values_only=True)
+
+        try:
+            headers_raw = next(rows_iter)
+        except StopIteration:
+            base_payload["sheets"] = sheet_names
+            base_payload["active_sheet"] = active_sheet
+            return base_payload
+
+        headers: list[str] = []
+        for idx, header in enumerate(headers_raw or (), start=1):
+            if isinstance(header, str):
+                clean = header.strip()
+                headers.append(clean if clean else f"Columna {idx}")
+            elif header is None:
+                headers.append(f"Columna {idx}")
+            else:
+                headers.append(str(header))
+
+        preview_rows: list[dict[str, Any]] = []
+        row_count = 0
+        has_more = False
+
+        for row in rows_iter:
+            row_count += 1
+            row_dict: dict[str, Any] = {}
+            for col_idx, header in enumerate(headers):
+                value = row[col_idx] if col_idx < len(row) else None
+                row_dict[header] = value
+            if row_count <= limit:
+                preview_rows.append(row_dict)
+            else:
+                has_more = True
+                break
+
+        download_url = f"/pruebas/itcosas-v2/result/download?path={quote(report_path)}"
+
+        base_payload.update(
+            {
+                "sheets": sheet_names,
+                "active_sheet": active_sheet,
+                "columns": headers,
+                "rows": preview_rows,
+                "total": row_count,
+                "has_more": has_more,
+                "limit": limit,
                 "download_url": download_url,
                 "report_path": report_path,
             }
