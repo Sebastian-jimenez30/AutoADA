@@ -8,8 +8,37 @@
   <header class="buscarkey-header">
     <div class="buscarkey-header__title">
       <h2>Unifilares - Validar</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
     </div>
   </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Unifilares: Validar</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Valida archivos de unifilares (ITCOSAS) para empresa principal y respaldo, opcionalmente actualizando SCADA/ODS antes de procesar.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa</strong> y <strong>Dominio</strong> (CC por defecto) detectados/seleccionados.</li>
+          <li><strong>Archivos Excel</strong> de unifilares en el formato esperado por AutoADA.</li>
+          <li><strong>Actualizar info</strong> (opcional) para importar/convertir antes de validar.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Reportes de validación y archivos auxiliares.</li>
+          <li>Vista previa y descarga en <strong>Resultados</strong>.</li>
+          <li>Mensajes en <strong>Resumen</strong> y log completo en <strong>Consola</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <!-- PARÁMETROS -->
   <section class="buscarkey-form card params-card" id="paramsCard">
@@ -112,4 +141,17 @@
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => infoModal?.classList.add("is-visible"));
+  closeInfoBtn?.addEventListener("click", () => infoModal?.classList.remove("is-visible"));
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

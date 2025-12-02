@@ -346,6 +346,13 @@ def merge_and_save_excel(data_dict, key_df):
             if 'Monitoring Address' in df.columns and 'Monitoring Address' in keys.columns:
                 merge_columns.append('Monitoring Address')
             
+            # ELIMINAR DUPLICADOS DE KEYS ANTES DEL MERGE
+            duplicados_keys = keys.duplicated(subset=merge_columns, keep=False)
+            if duplicados_keys.any():
+                Logger.write_log().log_all('warning', f"Duplicados en keys para {tipo}: {duplicados_keys.sum()} registros", logger_console, logger)
+                keys = keys.drop_duplicates(subset=merge_columns, keep='first')
+                Logger.write_log().log_all('info', f"Keys deduplicadas: {len(keys)} registros", logger_console, logger)
+            
             # Agregar 'Key' a las columnas a obtener de keys
             columns_from_keys = merge_columns + ['Key']
             
@@ -353,6 +360,13 @@ def merge_and_save_excel(data_dict, key_df):
                             on=merge_columns, how='left')
             merged['Scada Key'] = merged['Key'].astype(str)
             merged.drop(columns=['Key'], inplace=True)
+            
+            # Verificar si hay duplicados después del merge
+            duplicados_merged = merged.duplicated(subset=['Scada Key', 'Name'], keep=False)
+            if duplicados_merged.any():
+                Logger.write_log().log_all('warning', f"Duplicados después del merge en {tipo}: {duplicados_merged.sum()} registros", logger_console, logger)
+                merged = merged.drop_duplicates(subset=['Scada Key', 'Name'], keep='first')
+            
             resultados[tipo] = merged
         else:
             resultados[tipo] = df
@@ -369,6 +383,12 @@ def merge_and_save_excel(data_dict, key_df):
     
     with pd.ExcelWriter(archivo_excel) as writer:
         for nombre, df in resultados.items():
+            # Verificar duplicados finales
+            if 'Scada Key' in df.columns:
+                dups = df.duplicated(subset=['Scada Key'], keep=False)
+                if dups.any():
+                    Logger.write_log().log_all('error', f"DUPLICADOS FINALES en {nombre}: {dups.sum()} registros con claves duplicadas", logger_console, logger)
+            
             df.to_excel(writer, sheet_name=nombre, index=False)
             Logger.write_log().log_all('info', f"Hoja {nombre} guardada con {len(df)} registros", logger_console, logger)
     

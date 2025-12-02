@@ -8,8 +8,38 @@
   <header class="buscarkey-header">
     <div class="buscarkey-header__title">
       <h2>Jobs - Cambiar nombre</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
     </div>
   </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Jobs: Cambiar nombre</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Valida y genera cargas para renombrar señales de jobs en SCADA (QA) según un Excel de mapeos.
+          Puede sincronizar SCADA antes de procesar.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa</strong> objetivo.</li>
+          <li><strong>Archivo Excel</strong> con los cambios de nombre (columnas esperadas por AutoADA).</li>
+          <li><strong>Actualizar BD</strong> (opcional) para importar/convertir SCADA previo a validar.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Archivos de carga/cambio y reporte Excel/TXT.</li>
+          <li>Vista previa y descarga en <strong>Resultados</strong>.</li>
+          <li>Mensajes en <strong>Resumen</strong> y log detallado en <strong>Consola</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <!-- PARÁMETROS -->
   <section class="buscarkey-form card params-card" id="paramsCard">
@@ -106,4 +136,17 @@
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => infoModal?.classList.add("is-visible"));
+  closeInfoBtn?.addEventListener("click", () => infoModal?.classList.remove("is-visible"));
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

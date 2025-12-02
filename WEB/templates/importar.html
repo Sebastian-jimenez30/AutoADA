@@ -2,12 +2,42 @@
 
 {% block content %}
 <section class="content-card">
-  <div>
-    <h2>Importar datos</h2>
-    <p>
-      Ejecuta el flujo de importación para sincronizar los datasets SCADA, HSH y ODS con los servidores
-      corporativos. Asegúrate de haber desbloqueado el vault antes de iniciar el proceso.
-    </p>
+  <div class="buscarkey-header__title" style="display:flex;align-items:center;gap:12px;">
+    <div>
+      <h2>Importar datos</h2>
+      <p>
+        Ejecuta el flujo de importación para sincronizar los datasets SCADA, HSH y ODS con los servidores
+        corporativos. Asegúrate de haber desbloqueado el vault antes de iniciar el proceso.
+      </p>
+    </div>
+    <button type="button" class="info-btn" id="infoBtn" title="Más información">
+      <span>?</span>
+    </button>
+  </div>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Importar datos</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Corre el pipeline <strong>importar_all</strong> para traer datos SCADA/HSH/ODS desde los servidores configurados.
+          Es el primer paso antes de convertir o ejecutar validaciones.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa</strong> (ej. ITCO, TRA, REPS, REPP).</li>
+          <li>Vault desbloqueado para credenciales SSH/ODBC/Mongo.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Logs del proceso en pantalla.</li>
+          <li>Datasets actualizados en <code>AutoADA/out/&lt;EMPRESA&gt;/...</code>.</li>
+        </ul>
+      </div>
+    </div>
   </div>
 
   <form method="post" action="/importar" class="form-grid">
@@ -37,4 +67,17 @@
     </div>
   {% endif %}
 </section>
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => infoModal?.classList.add("is-visible"));
+  closeInfoBtn?.addEventListener("click", () => infoModal?.classList.remove("is-visible"));
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

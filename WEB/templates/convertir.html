@@ -2,12 +2,41 @@
 
 {% block content %}
 <section class="content-card">
-  <div>
-    <h2>Convertir datos</h2>
-    <p>
-      Lanza el pipeline de conversión para generar reportes y salidas operativas a partir de los datos
-      importados. Selecciona la empresa y el modo requerido antes de continuar.
-    </p>
+  <div class="buscarkey-header__title" style="display:flex;align-items:center;gap:12px;">
+    <div>
+      <h2>Convertir datos</h2>
+      <p>
+        Lanza el pipeline de conversión para generar reportes y salidas operativas a partir de los datos
+        importados. Selecciona la empresa y el modo requerido antes de continuar.
+      </p>
+    </div>
+    <button type="button" class="info-btn" id="infoBtn" title="Más información">
+      <span>?</span>
+    </button>
+  </div>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Convertir datos</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Ejecuta <strong>Convertir_all</strong> para transformar los datasets importados según el modo seleccionado (Buscar Keys, Validar HSH, Jobs, Unifilares).
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa</strong> (ej. ITCO, TRA, REPS, REPP).</li>
+          <li><strong>Modo</strong> de conversión que define el perfil a ejecutar.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Logs del proceso.</li>
+          <li>Archivos convertidos en <code>AutoADA/out/&lt;EMPRESA&gt;/</code> listos para validaciones/reporte.</li>
+        </ul>
+      </div>
+    </div>
   </div>
 
   <form method="post" action="/convertir" class="form-grid">
@@ -46,4 +75,17 @@
     </div>
   {% endif %}
 </section>
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => infoModal?.classList.add("is-visible"));
+  closeInfoBtn?.addEventListener("click", () => infoModal?.classList.remove("is-visible"));
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

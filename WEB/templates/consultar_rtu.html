@@ -8,8 +8,37 @@
   <header class="buscarkey-header">
     <div class="buscarkey-header__title">
       <h2>Consultar RTU/SAS</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
     </div>
   </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Consultar RTU/SAS</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Genera un reporte de RTU/SAS desde el SCADA más reciente (32_6.csv). Primero puedes refrescar los datos SCADA y luego elegir las RTU/SAS a consultar.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li><strong>Empresa:</strong> selecciona ITCO/TRA o REPS/REPP según el host.</li>
+          <li><strong>Actualizar datos:</strong> ejecuta importar/convertir SCADA para tener 32_6.csv al día.</li>
+          <li><strong>RTU/SAS:</strong> selecciona uno o varios elementos del listado filtrable.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Reporte Excel con la información de las RTU/SAS seleccionadas.</li>
+          <li>Vista previa en la pestaña <strong>Resultados</strong> y descarga directa.</li>
+          <li>Log detallado en <strong>Consola</strong> y mensajes en <strong>Resumen</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <section class="buscarkey-form card params-card" id="paramsCard">
     <h3>Parámetros de ejecución</h3>
@@ -98,4 +127,21 @@
 <script src="{{ url_for('static', path='js/consultar_rtu.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', path='css/consultar_rtu.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => {
+    infoModal?.classList.add("is-visible");
+  });
+  closeInfoBtn?.addEventListener("click", () => {
+    infoModal?.classList.remove("is-visible");
+  });
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

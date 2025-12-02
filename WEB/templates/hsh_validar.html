@@ -8,8 +8,36 @@
   <header class="buscarkey-header">
     <div class="buscarkey-header__title">
       <h2>Validar HSH</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
     </div>
   </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Validar HSH</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Ejecuta el flujo de validación completa de HSH para empresa principal y respaldo detectadas en el host. Sincroniza SCADA/HSH y corre los chequeos automáticos.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li>No requiere archivo: se usan las empresas detectadas (dominio CC).</li>
+          <li>Se puede lanzar tantas veces como necesites para revisar consistencia.</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Reportes de validación en Excel/TXT.</li>
+          <li>Vista previa en <strong>Resultados</strong> y descarga del Excel.</li>
+          <li>Mensajes de progreso en <strong>Resumen</strong> y log detallado en <strong>Consola</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <!-- PARÁMETROS -->
   <section class="buscarkey-form card params-card" id="paramsCard">
@@ -81,4 +109,21 @@
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => {
+    infoModal?.classList.add("is-visible");
+  });
+  closeInfoBtn?.addEventListener("click", () => {
+    infoModal?.classList.remove("is-visible");
+  });
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}

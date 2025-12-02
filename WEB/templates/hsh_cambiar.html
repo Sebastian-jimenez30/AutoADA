@@ -8,8 +8,36 @@
   <header class="buscarkey-header">
     <div class="buscarkey-header__title">
       <h2>Cambiar Key HSH</h2>
+      <button type="button" class="info-btn" id="infoBtn" title="Más información">
+        <span>?</span>
+      </button>
     </div>
   </header>
+
+  <div id="infoModal" class="info-modal">
+    <div class="info-modal__content">
+      <div class="info-modal__header">
+        <h3>Ayuda – Cambiar Key HSH</h3>
+        <button class="info-modal__close" id="closeInfoBtn">&times;</button>
+      </div>
+      <div class="info-modal__body">
+        <p>
+          Valida y ejecuta cambios de keys en HSH (principal y respaldo), apagando/encendiendo bits SCADA y generando delete/purge cuando corresponde. Puedes validar antes de aplicar.
+        </p>
+        <h4>Entradas</h4>
+        <ul>
+          <li>Archivo Excel con la hoja de cambios de key.</li>
+          <li>Opciones: <strong>Validar</strong> (solo revisión), <strong>Ejecutar</strong> (aplica cambios) y <strong>Consultar PI</strong> (opcional).</li>
+        </ul>
+        <h4>Salidas</h4>
+        <ul>
+          <li>Archivos delete/purge generados y comandos SCADA/PI.</li>
+          <li>Reportes Excel/TXT con resultados y vista previa en <strong>Resultados</strong>.</li>
+          <li>Mensajes de progreso en <strong>Resumen</strong> y log completo en <strong>Consola</strong>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
   <!-- PARÁMETROS -->
   <section class="buscarkey-form card params-card" id="paramsCard">
@@ -97,4 +125,21 @@
 
 <script src="{{ url_for('static', path='js/buscar_key.js') }}"></script>
 <link rel="stylesheet" href="{{ url_for('static', path='css/buscar_key.css') }}">
+<script>
+  const infoBtn = document.getElementById("infoBtn");
+  const infoModal = document.getElementById("infoModal");
+  const closeInfoBtn = document.getElementById("closeInfoBtn");
+
+  infoBtn?.addEventListener("click", () => {
+    infoModal?.classList.add("is-visible");
+  });
+  closeInfoBtn?.addEventListener("click", () => {
+    infoModal?.classList.remove("is-visible");
+  });
+  infoModal?.addEventListener("click", (e) => {
+    if (e.target === infoModal) {
+      infoModal.classList.remove("is-visible");
+    }
+  });
+</script>
 {% endblock %}
