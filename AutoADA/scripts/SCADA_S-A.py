@@ -169,8 +169,6 @@ def procesar_datos():
         else:
             Logger.write_log().log_all('warning', 'Hoja STATUS vacía, se omitirá', logger_console, logger)
 
-
-
         # ---------------- ANALOG ----------------
         if not analog_df.empty:
             analog_df.insert(0, '5', None)
