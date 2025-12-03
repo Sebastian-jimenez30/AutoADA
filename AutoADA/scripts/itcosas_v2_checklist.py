@@ -178,6 +178,53 @@ def _delete_temp(path: str):
         pass
 
 
+def _load_checklist_dataframe(path: str, preferred_sheet: str | None, required_cols: List[str]) -> "pd.DataFrame":
+    """
+    Lee el checklist buscando la primera hoja que contenga las columnas requeridas (tolerante a aliases).
+    Prioriza `preferred_sheet` y luego recorre el resto.
+    """
+    dtype_dict_checklist = {"SCADAkey": str}
+    try:
+        excel = pd.ExcelFile(path, engine="openpyxl")
+        sheet_names = excel.sheet_names
+    except Exception:
+        # fallback: intenta solo con preferred_sheet
+        sheet_names = [preferred_sheet] if preferred_sheet else []
+
+    seen: set[str] = set()
+    candidates: List[str] = []
+    if preferred_sheet:
+        candidates.append(preferred_sheet)
+        seen.add(preferred_sheet)
+    for s in sheet_names:
+        if s not in seen:
+            candidates.append(s)
+            seen.add(s)
+
+    last_err: Exception | None = None
+    for sheet in candidates:
+        try:
+            df_raw = pd.read_excel(path, sheet_name=sheet, dtype=dtype_dict_checklist, engine="openpyxl")
+            df_norm = _map_checklist_columns(df_raw)
+            # asegurar que están las requeridas en el resultado
+            missing = [c for c in required_cols if c not in df_norm.columns]
+            if not missing:
+                return df_norm
+        except Exception as exc:  # guarda y sigue probando otras hojas
+            last_err = exc
+            continue
+
+    # Si no encontró ninguna hoja válida, propaga el último error o uno nuevo descriptivo
+    cols = []
+    try:
+        cols = list(df_raw.columns)  # type: ignore[name-defined]
+    except Exception:
+        pass
+    if last_err:
+        raise KeyError(f"Error: Faltan columnas requeridas ({', '.join(required_cols)}) en {','.join(cols) or 'la(s) hoja(s) revisada(s)'}") from last_err
+    raise KeyError(f"Error: No se encontró una hoja con columnas {', '.join(required_cols)} en {os.path.basename(path)}")
+
+
 # -----------------------------
 # Main
 # -----------------------------
@@ -221,6 +268,8 @@ def main():
         if "IOA" not in df_soe_local.columns:
             raise KeyError("SOE_Local.csv debe contener la columna 'IOA'.")
         # excluir NaN IOA y convertir
+        if "Event" in df_soe_local.columns:
+            df_soe_local = df_soe_local[df_soe_local["Event"] != -1]
         df_soe_local = df_soe_local[df_soe_local["IOA"].notna()].copy()
         df_soe_local["IOA"] = pd.to_numeric(df_soe_local["IOA"], errors="coerce").astype("Int64")
         # sufijos _local
@@ -238,10 +287,8 @@ def main():
         df_soe_monarch = df_soe_monarch.add_suffix("_monarch")
 
         # ----------------- Cargar Checklist (STATUS) -----------------
-        dtype_dict_checklist = {"SCADAkey": str}
-        df_checklist = pd.read_excel(checklist_path, sheet_name=args.sheet_status, dtype=dtype_dict_checklist, engine="openpyxl")
-        # normalizar headers tolerando variaciones y acentos
-        df_checklist = _map_checklist_columns(df_checklist)
+        required_cols = ["IOA", "SCADAkey", "AOR", "type", "Station", "Name", "Prueba"]
+        df_checklist = _load_checklist_dataframe(checklist_path, args.sheet_status, required_cols)
 
         # IOA como enteros (nullable)
         df_checklist = df_checklist[df_checklist["IOA"].notna()].copy()
