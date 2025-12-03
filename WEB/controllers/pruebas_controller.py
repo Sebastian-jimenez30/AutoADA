@@ -348,7 +348,7 @@ def itcosas_v1_pipeline(
         yield line
 
     # Paso SOE Monarch
-    cmd_monarch = build_cmd("scripts.pyp_soe_monarch", empresa, checklist, artifacts["his_data"])
+    cmd_monarch = build_cmd("scripts.pyp_soe_monarch", empresa, checklist, artifacts["his_data"], "--dominio", dominio)
     rc_monarch = yield from _stream_step("SOE-MONARCH", cmd_monarch)
     if rc_monarch != 0:
         msg = "SOE Monarch falló."

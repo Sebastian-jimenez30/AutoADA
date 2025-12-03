@@ -14,9 +14,15 @@ def _ensure_out_pruebas() -> str:
     return outdir
 
 
-def _scada_dir(empresa: str) -> str:
-    # SCADA generado por la app: out/<empresa>/SCADA
-    return os.path.join(os.getcwd(), "out", empresa, "SCADA")
+def _scada_dir(empresa: str, dominio: str | None = None) -> str:
+    # SCADA generado por la app: out/<empresa>/<dominio>SCADA (fallback SCADA)
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    base = os.path.join(os.getcwd(), "out", empresa)
+    candidates = [os.path.join(base, suffix), os.path.join(base, suffix.lower()), os.path.join(base, "SCADA")]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[0]
 
 
 def _read_csv_robust(path, **kwargs):
@@ -272,10 +278,11 @@ def main():
     parser.add_argument("his_data_path", type=str, help="Ruta al archivo HIS (data-*.csv), carpeta o 'AUTO'")
     parser.add_argument("--station", default=None, help="Código RTU/SAS (p.ej. ESME000 o '89: ESME000')")
     parser.add_argument("--his-base", default="data-", help="Prefijo para auto-detección del HIS (por defecto 'data-')")
+    parser.add_argument("--dominio", default=None, help="Dominio (ej: CC, QA) para elegir carpeta SCADA")
     args = parser.parse_args()
 
     out_pruebas = _ensure_out_pruebas()
-    scada_dir = _scada_dir(args.empresa)
+    scada_dir = _scada_dir(args.empresa, args.dominio)
 
     # 0) Selección de archivo HIS (soporta archivo directo, carpeta o 'AUTO')
     try:
