@@ -26,6 +26,7 @@ def get_args():
     p.add_argument('modo', type=str, help='Modos separados por coma: sca,hsh,ods')
     p.add_argument('--usecase', type=str, default=None, help='Nombre del usecase (ej: buscar_keys, hsh_validar, etc.)')
     p.add_argument('--flex', action='store_true', help='Importar también empresa relacionada (si aplica)')
+    p.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para segmentar SCADA')
     return p.parse_args()
 
 
@@ -36,6 +37,7 @@ def main():
     modo = args.modo
     usecase = args.usecase
     flex = bool(args.flex)
+    dominio = args.dominio
 
     log_dir = os.path.join(output_root(), "log")
     os.makedirs(log_dir, exist_ok=True)
@@ -43,7 +45,7 @@ def main():
     logger, logger_console = Logger.initlog(log_path)
 
     acciones = {
-        'sca': lambda: import_scada.run(server, empresa, usecase, flex, logger, logger_console),
+        'sca': lambda: import_scada.run(server, empresa, usecase, flex, logger, logger_console, dominio=dominio),
         'hsh': lambda: import_hsh.run(server, empresa, usecase, flex, logger, logger_console),
         'ods': lambda: import_ods.run(server, empresa, usecase, flex, logger, logger_console),
     }

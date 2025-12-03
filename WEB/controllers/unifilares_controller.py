@@ -185,7 +185,7 @@ def validar_unifilares_pipeline(
 
     if actualizar:
         # Importar SCADA+ODS (perfil unifilares_validar) y convertir ambos
-        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca,ods", "--usecase", "unifilares_validar")
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca,ods", "--usecase", "unifilares_validar", "--dominio", dominio)
         rc_import = yield from _stream_step("IMPORT-SCADA/ODS", cmd_import)
         if rc_import != 0:
             msg = f"Importación SCADA/ODS falló (rc={rc_import})."
@@ -203,7 +203,7 @@ def validar_unifilares_pipeline(
             yield line
 
         # Convertir SCADA
-        cmd_convert_sca = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+        cmd_convert_sca = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", dominio)
         rc_convert_sca = yield from _stream_step("CONVERT-SCADA", cmd_convert_sca)
         if rc_convert_sca != 0:
             msg = f"Conversión SCADA falló (rc={rc_convert_sca})."
@@ -253,7 +253,7 @@ def validar_unifilares_pipeline(
         return
 
     # Ejecutar validación de unifilares
-    cmd_validar = build_cmd("scripts.Validacion_unifilares", "--archivos", *archivos, "--empresa", empresa)
+    cmd_validar = build_cmd("scripts.Validacion_unifilares", "--archivos", *archivos, "--empresa", empresa, "--dominio", dominio)
     rc_val = yield from _stream_step("VALIDAR-UNIFILARES", cmd_validar)
 
     status = "SUCCESS" if rc_val == 0 else "ERROR"

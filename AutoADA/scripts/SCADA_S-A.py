@@ -35,6 +35,11 @@ def _runtime_root() -> str:
 
 base_dir = _runtime_root()
 
+def _scada_path(root: str, empresa: str, dominio: str | None = None) -> str:
+    """Ruta a SCADA según dominio (default SCADA)."""
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.join(root, "out", empresa, suffix)
+
 # Inicialización del logger personalizado
 log_dir = os.path.join(base_dir, 'log')
 os.makedirs(log_dir, exist_ok=True)
@@ -44,6 +49,7 @@ logger, logger_console = Logger.initlog(log_path, append=True)
 def get_args():
     parser = argparse.ArgumentParser(description='Script para dividir las senales en cada tipo')
     parser.add_argument('empresa', type=str, help='Nombre de la empresa')
+    parser.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para segmentar rutas SCADA')
     return parser.parse_args()
 
 def normalizar_texto_sin_tildes(texto):
@@ -118,7 +124,7 @@ def procesar_datos():
 
         args = get_args()
         empresa = args.empresa
-        ruta_scada = os.path.join(base_dir, "out", empresa, "SCADA")
+        ruta_scada = _scada_path(base_dir, empresa, args.dominio)
         Logger.write_log().log_all('info', 'Carpeta Load lista', logger_console, logger)
 
         # === FUNCIONES AUXILIARES ===

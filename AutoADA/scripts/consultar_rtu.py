@@ -62,9 +62,15 @@ def _parse_rtu_argument(value: Union[str, None], default: List[str]) -> List[str
     return items or default
 
 
-def read_dataframes(base_dir: str, empresa: str) -> Dict[str, pd.DataFrame]:
+def _scada_path(root: str, empresa: str, dominio: str | None = None) -> str:
+    """Ruta a SCADA según dominio (default SCADA)."""
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.join(root, "out", empresa, suffix)
+
+
+def read_dataframes(base_dir: str, empresa: str, dominio: str | None = None) -> Dict[str, pd.DataFrame]:
     Logger.write_log().log_all('info', 'Inicia lectura CSV', logger_console, logger)
-    ruta = os.path.join(base_dir, "out", empresa, "SCADA")
+    ruta = _scada_path(base_dir, empresa, dominio)
     if not os.path.isdir(ruta):
         raise FileNotFoundError(f"No se encontró el directorio de SCADA: {ruta}")
 
@@ -246,7 +252,7 @@ def generar_excel(dfs_finales: Dict[str, pd.DataFrame], output_path: str) -> Non
     Logger.write_log().log_all('info', f'Archivo Excel guardado: {output_path}', logger_console, logger)
 
 
-def ejecutar_consulta_rtu(empresa: str, rtu_list: List[str], base_dir: Union[str, None] = None) -> str:
+def ejecutar_consulta_rtu(empresa: str, rtu_list: List[str], base_dir: Union[str, None] = None, dominio: str | None = None) -> str:
     if not empresa:
         raise ValueError("Debe proporcionar una empresa válida")
     if not rtu_list:
@@ -261,7 +267,7 @@ def ejecutar_consulta_rtu(empresa: str, rtu_list: List[str], base_dir: Union[str
     Logger.write_log().log_all('info', '=' * 50, logger_console, logger)
 
     start_time = datetime.now()
-    dfs = read_dataframes(base_dir, empresa)
+    dfs = read_dataframes(base_dir, empresa, dominio=dominio)
     diccionarios = crear_diccionarios(dfs)
     numeros_rtu, rtu_numero_a_nombre = procesar_rtus(rtu_list)
     if not numeros_rtu:
@@ -311,6 +317,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help='Nombre de la empresa (por defecto ITCO).')
     parser.add_argument('--rtus', '-r', default=None,
                         help="Lista de RTU/SAS separadas por comas en formato '106: SABANT,128: SABA_TRN'.")
+    parser.add_argument('--dominio', '-d', default=None,
+                        help='Dominio (ej: CC, QA) para elegir la carpeta SCADA')
     return parser
 
 
@@ -321,7 +329,7 @@ def main(argv: Union[List[str], None] = None) -> int:
     empresa = (args.empresa or 'ITCO').strip()
     rtus = _parse_rtu_argument(args.rtus, DEFAULT_RTUS)
 
-    ejecutar_consulta_rtu(empresa, rtus)
+    ejecutar_consulta_rtu(empresa, rtus, dominio=args.dominio)
     return 0
 
 

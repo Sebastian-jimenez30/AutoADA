@@ -125,6 +125,7 @@ def crear_senales_pipeline(
     actualizar: bool,
     archivo_path: str,
     archivo_nombre: str | None,
+    dominio: str | None = None,
 ) -> Generator[str, None, None]:
     """Flujo web para Jobs -> Crear señales (equivalente al handler desktop)."""
     global last_jobs_crear_result
@@ -142,7 +143,7 @@ def crear_senales_pipeline(
 
     empresa = (empresa or "").strip().upper()
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
-    dominio = "QA"
+    dominio = (dominio or "QA").strip().upper()
 
     yield f"Iniciando creación de señales para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
     summary_line = _summary_line(f"{empresa}: proceso iniciado")
@@ -188,8 +189,8 @@ def crear_senales_pipeline(
         return rc if rc is not None else 0
 
     if actualizar:
-        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_crear_senales")
-        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs")
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_crear_senales", "--dominio", dominio)
+        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs", "--dominio", dominio)
 
         rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
         if rc_import != 0:
@@ -226,7 +227,7 @@ def crear_senales_pipeline(
             yield line
 
     # Validación del Excel de entrada
-    cmd_scan = build_cmd("scripts.scan_data", archivo_path, empresa)
+    cmd_scan = build_cmd("scripts.scan_data", archivo_path, empresa, "--dominio", dominio)
     rc_scan = yield from _stream_step("SCAN-DATA", cmd_scan)
     if rc_scan == 2:
         msg = "Validación de datos fallida."
@@ -264,7 +265,7 @@ def crear_senales_pipeline(
             yield line
 
     # Generación de cargas SCADA
-    cmd_scada = build_cmd("scripts.SCADA_S-A", empresa)
+    cmd_scada = build_cmd("scripts.SCADA_S-A", empresa, "--dominio", dominio)
     rc_scada = yield from _stream_step("SCADA-S-A", cmd_scada)
 
     status = "SUCCESS" if rc_scada == 0 else "ERROR"
@@ -413,6 +414,7 @@ def eliminar_senales_pipeline(
     actualizar: bool,
     archivo_path: str,
     archivo_nombre: str | None,
+    dominio: str | None = None,
 ) -> Generator[str, None, None]:
     """Flujo web para Jobs -> Eliminar señales (equivale al handler desktop)."""
     global last_jobs_eliminar_result
@@ -430,7 +432,7 @@ def eliminar_senales_pipeline(
 
     empresa = (empresa or "").strip().upper()
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
-    dominio = "QA"
+    dominio = (dominio or "QA").strip().upper()
 
     yield f"Iniciando eliminación de señales para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
     summary_line = _summary_line(f"{empresa}: proceso iniciado")
@@ -476,8 +478,8 @@ def eliminar_senales_pipeline(
         return rc if rc is not None else 0
 
     if actualizar:
-        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_eliminar_senales")
-        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs")
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_eliminar_senales", "--dominio", dominio)
+        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs", "--dominio", dominio)
 
         rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
         if rc_import != 0:
@@ -514,7 +516,7 @@ def eliminar_senales_pipeline(
             yield line
 
     # Ejecución de eliminación
-    cmd_eliminar = build_cmd("scripts.eliminar_senales_scada", archivo_path, empresa)
+    cmd_eliminar = build_cmd("scripts.eliminar_senales_scada", archivo_path, empresa, "--dominio", dominio)
     rc_del = yield from _stream_step("ELIMINAR-SENALES", cmd_eliminar)
 
     status = "SUCCESS" if rc_del == 0 else "ERROR"
@@ -617,6 +619,7 @@ def cambiar_nombre_pipeline(
     actualizar: bool,
     archivo_path: str,
     archivo_nombre: str | None,
+    dominio: str | None = None,
 ) -> Generator[str, None, None]:
     """Flujo web para Jobs -> Cambiar nombre (equivalente al handler desktop)."""
     global last_jobs_cambiar_result
@@ -634,7 +637,7 @@ def cambiar_nombre_pipeline(
 
     empresa = (empresa or "").strip().upper()
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
-    dominio = "QA"
+    dominio = (dominio or "QA").strip().upper()
 
     yield f"Iniciando cambio de nombre para empresa={empresa} dominio={dominio} archivo={archivo_nombre}\n"
     line = _summary_line(f"{empresa}: proceso iniciado")
@@ -680,8 +683,8 @@ def cambiar_nombre_pipeline(
         return rc if rc is not None else 0
 
     if actualizar:
-        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_crear_senales")
-        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs")
+        cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "jobs_crear_senales", "--dominio", dominio)
+        cmd_convert = build_cmd("scripts.Convertir_all", empresa, "jobs", "--dominio", dominio)
 
         rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
         if rc_import != 0:
@@ -718,7 +721,7 @@ def cambiar_nombre_pipeline(
             yield line
 
     # Ejecución de cambio de nombre
-    cmd_change = build_cmd("scripts.cambiar_nombre_senales_scada", archivo_path, empresa)
+    cmd_change = build_cmd("scripts.cambiar_nombre_senales_scada", archivo_path, empresa, "--dominio", dominio)
     rc_change = yield from _stream_step("CAMBIO-NOMBRE", cmd_change)
 
     status = "SUCCESS" if rc_change == 0 else "ERROR"

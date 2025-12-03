@@ -27,10 +27,11 @@ def _rt():
     """Raíz de trabajo (escritura/lectura) para one-file: el CWD."""
     return os.getcwd()
 
-def get_base_dir(empresa=None):
+def get_base_dir(empresa=None, dominio=None):
     if not empresa:
         raise ValueError("Debe especificar el nombre de la empresa con --empresa. No se permite un valor por defecto.")
-    return os.path.abspath(os.path.join(_rt(), 'out', empresa))
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.abspath(os.path.join(_rt(), 'out', empresa, suffix))
 
 logger = None
 logger_console = None
@@ -582,7 +583,8 @@ def main():
     global logger, logger_console
     parser = argparse.ArgumentParser(description="Validación de Unifilares desde interfaz")
     parser.add_argument('--archivos', nargs='+', required=True, help='Archivos unifilares a validar')
-    parser.add_argument('--empresa', required=True, help='Nombre de la empresa (para leer SCADA en out/<empresa>/SCADA)')
+    parser.add_argument('--empresa', required=True, help='Nombre de la empresa (para leer SCADA en out/<empresa>/<dominio>SCADA)')
+    parser.add_argument('--dominio', default=None, help='Dominio (ej: CC, QA) para elegir carpeta SCADA')
     args = parser.parse_args()
 
     log_dir = os.path.join(_rt(), 'log')
@@ -590,8 +592,8 @@ def main():
     log_path = os.path.join(log_dir, 'validacion_unifilares.log')
     logger, logger_console = Logger.initlog(log_path)
 
-    BASE_DIR = get_base_dir(args.empresa)
-    SCADA_DIR = os.path.join(BASE_DIR, 'SCADA')
+    BASE_DIR = get_base_dir(args.empresa, args.dominio)
+    SCADA_DIR = BASE_DIR
     out_dir = os.path.join(_rt(), "out", "Validacion_Unifilares")
 
     resumen = run_validaciones_unifilar(args.archivos, out_dir, logger, SCADA_DIR)

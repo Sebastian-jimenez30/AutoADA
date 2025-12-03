@@ -63,6 +63,15 @@
           </div>
 
           <div class="form-field">
+            <label for="dominio">Dominio</label>
+            <select id="dominio" name="dominio" required>
+              {% for dom in dominios %}
+                <option value="{{ dom }}" {% if loop.first %}selected{% endif %}>{{ dom }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-field">
             <label for="fecha">Fecha (YYYY-MM-DD)</label>
             <input type="date" id="fecha" name="fecha" required>
           </div>

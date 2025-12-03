@@ -175,7 +175,7 @@ def buscar_key_pipeline(
             yield line
 
     if not needs_update:
-        cmd = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
+        cmd = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas), "--dominio", dominio)
         line = _summary(f"{summary_prefix}: búsqueda en curso ({len(keys_validas)} key(s))")
         if line:
             yield line
@@ -211,8 +211,8 @@ def buscar_key_pipeline(
     yield f"Actualizando datos desde el servidor '{servidor}' antes de buscar.\n"
 
     steps = [
-        ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase)),
-        ("CONVERT-SCA", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "sca")),
+        ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase, "--dominio", dominio)),
+        ("CONVERT-SCA", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "sca", "--dominio", dominio)),
         ("IMPORT-HSH", build_cmd("scripts.importar_all", servidor, empresa, "hsh", "--usecase", usecase)),
         ("CONVERT-HSH", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "hsh")),
         ("IMPORT-ODS", build_cmd("scripts.importar_all", servidor, empresa, "ods", "--usecase", usecase)),
@@ -226,7 +226,7 @@ def buscar_key_pipeline(
             yield from _abort(f"El paso {label} finalizó con errores (rc={rc}).")
             return
 
-    cmd_buscar = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas))
+    cmd_buscar = build_cmd("scripts.buscar_key", empresa, ",".join(keys_validas), "--dominio", dominio)
     line = _summary(f"{summary_prefix}: búsqueda en curso ({len(keys_validas)} key(s))")
     if line:
         yield line
@@ -457,7 +457,7 @@ def buscar_keys_pipeline(
         yield _result_line("ERROR", message)
 
     if not needs_update:
-        cmd = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+        cmd = build_cmd("scripts.buscar_keys", empresa, archivo_path, "--dominio", dominio)
         line = _summary_line(f"{summary_prefix}: búsqueda desde archivo en curso ({file_label})")
         if line:
             yield line
@@ -496,8 +496,8 @@ def buscar_keys_pipeline(
         yield line
 
     steps = [
-        ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase)),
-        ("CONVERT-SCA", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "sca")),
+        ("IMPORT-SCA", build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", usecase, "--dominio", dominio)),
+        ("CONVERT-SCA", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "sca", "--dominio", dominio)),
         ("IMPORT-HSH", build_cmd("scripts.importar_all", servidor, empresa, "hsh", "--usecase", usecase)),
         ("CONVERT-HSH", build_cmd("scripts.Convertir_all", empresa, "Buscar_keys", "--only", "hsh")),
         ("IMPORT-ODS", build_cmd("scripts.importar_all", servidor, empresa, "ods", "--usecase", usecase)),
@@ -535,7 +535,7 @@ def buscar_keys_pipeline(
     if line:
         yield line
 
-    cmd_buscar = build_cmd("scripts.buscar_keys", empresa, archivo_path)
+    cmd_buscar = build_cmd("scripts.buscar_keys", empresa, archivo_path, "--dominio", dominio)
     line = _summary(f"{summary_prefix}: búsqueda desde archivo en curso ({file_label})")
     if line:
         yield line

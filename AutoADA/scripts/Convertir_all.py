@@ -63,6 +63,12 @@ def get_args():
         default=None,
         help='Components to convert (comma or space separated): sca, hsh, ods, ods_csv'
     )
+    parser.add_argument(
+        '--dominio',
+        type=str,
+        default=None,
+        help='Dominio (ej: CC, QA) para segmentar carpetas SCADA'
+    )
     return parser.parse_args()
 
 
@@ -166,15 +172,16 @@ def _extract_db_label(raw_lines):
     return db_fmt or table_fmt
 
 
-def convertir_scada(empresa, logger, logger_console):
-    # Entradas: AppData/db/<empresa>/SCADA  |  Salidas: <exe>/out/<empresa>/SCADA
-    base_dir = _DB(empresa, 'SCADA')
+def convertir_scada(empresa, logger, logger_console, dominio=None):
+    # Entradas: AppData/db/<empresa>/<dominio>SCADA  |  Salidas: <exe>/out/<empresa>/<dominio>SCADA
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    base_dir = _DB(empresa, suffix)
     if not os.path.exists(base_dir):
         msg = f"No existe la carpeta: {base_dir}"
         Logger.write_log().log_all('error', msg, logger_console, logger)
         raise FileNotFoundError(msg)
 
-    output_dir = _OUT('out', empresa, 'SCADA')
+    output_dir = _OUT('out', empresa, suffix)
 
     dat_files = glob.glob(os.path.join(base_dir, '*.dat'))
     if not dat_files:
@@ -620,7 +627,7 @@ def main():
     only = _parse_only(args.only)
     if only:
         component_map = {
-            "sca":     ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console)),
+            "sca":     ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console, dominio=args.dominio)),
             "hsh":     ("HSH",        lambda: convertir_hsh(empresa, logger, logger_console)),
             "ods":     ("UNIFILARES", lambda: convertir_unifilares(empresa, logger, logger_console)),
             # ods_csv no es paralelo; depende del resultado de 'ods' si tambien se pidio
@@ -653,7 +660,7 @@ def main():
     if modo == 'Buscar_keys':
         # 1) Correr SCADA, HSH y UNIFILARES en paralelo
         tasks = [
-            ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console)),
+            ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console, dominio=args.dominio)),
             ("HSH",        lambda: convertir_hsh(empresa, logger, logger_console)),
             ("UNIFILARES", lambda: convertir_unifilares(empresa, logger, logger_console)),
         ]
@@ -675,7 +682,7 @@ def main():
 
             res_emp = _run_parallel(
                 [
-                    ("SCADA", lambda: convertir_scada(emp, logger, logger_console)),
+                    ("SCADA", lambda: convertir_scada(emp, logger, logger_console, dominio=args.dominio)),
                     ("HSH",   lambda: convertir_hsh(emp, logger, logger_console)),
                 ],
                 logger, logger_console, titulo=f"Validar_HSH[{emp}]"
@@ -692,12 +699,12 @@ def main():
 
     elif modo == 'jobs':
         # Solo SCADA; no requiere paralelismo
-        convertir_scada(empresa, logger, logger_console)
+        convertir_scada(empresa, logger, logger_console, dominio=args.dominio)
 
     elif modo == 'unifilares':
         res = _run_parallel(
             [
-                ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console)),
+                ("SCADA",      lambda: convertir_scada(empresa, logger, logger_console, dominio=args.dominio)),
                 ("UNIFILARES", lambda: convertir_unifilares(empresa, logger, logger_console)),
             ],
             logger, logger_console, titulo=f"Convertir_all[{empresa}]/unifilares"

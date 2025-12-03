@@ -24,6 +24,7 @@ def jobs_crear_page(request: Request):
         "page_title": "Jobs - Crear señales",
         "page_subtitle": "Valida y genera las cargas SCADA para nuevas señales a partir de un Excel.",
         "empresas": list(jobs_controller.get_empresas()),
+        "dominios": list(jobs_controller.get_dominios()),
     }
     return templates.TemplateResponse("jobs_crear.html", context)
 
@@ -37,6 +38,7 @@ def jobs_eliminar_page(request: Request):
         "page_title": "Jobs - Eliminar señales",
         "page_subtitle": "Valida y genera archivos de eliminación SCADA a partir de un Excel.",
         "empresas": list(jobs_controller.get_empresas()),
+        "dominios": list(jobs_controller.get_dominios()),
     }
     return templates.TemplateResponse("jobs_eliminar.html", context)
 
@@ -50,6 +52,7 @@ def jobs_cambiar_nombre_page(request: Request):
         "page_title": "Jobs - Cambiar nombre",
         "page_subtitle": "Aplica cambios de nombre en SCADA a partir de un Excel.",
         "empresas": list(jobs_controller.get_empresas()),
+        "dominios": list(jobs_controller.get_dominios()),
     }
     return templates.TemplateResponse("jobs_cambiar_nombre.html", context)
 
@@ -59,6 +62,7 @@ def ejecutar_jobs_crear(
     request: Request,
     empresa: str = Form(...),
     actualizar: str | None = Form(None),
+    dominio: str | None = Form("QA"),
     archivo: UploadFile = File(...),
 ):
     if not archivo or not archivo.filename:
@@ -94,6 +98,7 @@ def ejecutar_jobs_crear(
                 actualizar=actualizar_flag,
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
+                dominio=dominio,
             )
         finally:
             try:
@@ -109,6 +114,7 @@ def ejecutar_jobs_eliminar(
     request: Request,
     empresa: str = Form(...),
     actualizar: str | None = Form(None),
+    dominio: str | None = Form("QA"),
     archivo: UploadFile = File(...),
 ):
     if not archivo or not archivo.filename:
@@ -144,6 +150,7 @@ def ejecutar_jobs_eliminar(
                 actualizar=actualizar_flag,
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
+                dominio=dominio,
             )
         finally:
             try:
@@ -159,6 +166,7 @@ def ejecutar_jobs_cambiar_nombre(
     request: Request,
     empresa: str = Form(...),
     actualizar: str | None = Form(None),
+    dominio: str | None = Form("QA"),
     archivo: UploadFile = File(...),
 ):
     if not archivo or not archivo.filename:
@@ -194,6 +202,7 @@ def ejecutar_jobs_cambiar_nombre(
                 actualizar=actualizar_flag,
                 archivo_path=tmp_path,
                 archivo_nombre=archivo_nombre,
+                dominio=dominio,
             )
         finally:
             try:

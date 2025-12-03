@@ -5,6 +5,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const origin = window.location.origin;
 
   const empresaSelect = document.getElementById("empresa");
+  const dominioSelect = document.getElementById("dominio");
   const buscador = document.getElementById("buscadorRtu");
   const rtuListContainer = document.getElementById("rtuList");
   const rtuCountLabel = document.getElementById("rtuCount");
@@ -625,9 +626,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const loadList = async () => {
     const empresa = empresaSelect?.value;
+    const dominio = dominioSelect?.value || "CC";
     if (!empresa) return;
     const params = new URLSearchParams();
     params.set("empresa", empresa);
+    if (dominio) params.set("dominio", dominio);
     const query = (buscador?.value || "").trim();
     if (query) params.set("search", query);
     try {
@@ -693,6 +696,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const runActualizar = async () => {
     const empresa = empresaSelect?.value;
+    const dominio = dominioSelect?.value;
     if (!empresa) {
       showResult("ERROR", "Selecciona una empresa.");
       return;
@@ -709,7 +713,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const resp = await fetch(actualizarUrl, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ empresa }),
+        body: new URLSearchParams({ empresa, dominio }),
       });
       if (!resp.ok || !resp.body) {
         showResult("ERROR", `Actualizacion fallo (HTTP ${resp.status}).`);
@@ -739,6 +743,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const runConsulta = async () => {
     const empresa = empresaSelect?.value;
+    const dominio = dominioSelect?.value || "CC";
     if (!empresa) {
       showResult("ERROR", "Selecciona una empresa.");
       return;
@@ -760,6 +765,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const params = new URLSearchParams();
       params.append("empresa", empresa);
+      params.append("dominio", dominio);
       rtus.forEach((r) => params.append("rtus", r));
       const resp = await fetch(runUrl, {
         method: "POST",
@@ -826,6 +832,13 @@ document.addEventListener("DOMContentLoaded", () => {
       empresaSelect.selectedIndex = 1;
       loadList();
     }
+  }
+
+  if (dominioSelect) {
+    dominioSelect.addEventListener("change", async () => {
+      selectedRtus.clear();
+      await loadList();
+    });
   }
 
   if (buscador) {

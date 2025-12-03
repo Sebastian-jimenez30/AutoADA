@@ -58,6 +58,10 @@ def get_empresas() -> list[str]:
     return ["ITCO", "TRA"]
 
 
+def get_dominios() -> list[str]:
+    return ["CC"]
+
+
 def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str], cwd: str) -> Generator[str, None, int]:
     yield f"\n--- {label} ---\n"
     yield f"$ {' '.join(cmd)}\n"
@@ -89,7 +93,32 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str], cwd:
     return rc
 
 
-def actualizar_rtu_dataset(empresa: str) -> Generator[str, None, None]:
+def _scada_path(root: str, empresa: str, dominio: str | None = None) -> str:
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.join(root, "out", empresa, suffix)
+
+
+def _resolve_scada_dir(empresa: str, dominio: str | None = None) -> str:
+    """
+    Devuelve la carpeta SCADA existente según dominio, con fallback a variantes conocidas.
+    Prioriza <dominio>SCADA, luego minúsculas, y finalmente SCADA legacy.
+    """
+    empresa = (empresa or "").strip().upper()
+    candidates: list[str] = []
+    if dominio:
+        suffix = f"{dominio}SCADA"
+        candidates.append(os.path.join(OUT_ROOT, empresa, suffix))
+        candidates.append(os.path.join(OUT_ROOT, empresa, suffix.lower()))
+    candidates.append(os.path.join(OUT_ROOT, empresa, "SCADA"))
+
+    for candidate in candidates:
+        if os.path.isdir(candidate):
+            return candidate
+    # Si no existe ninguna, devolver la primera esperada (aunque no exista) para mantener comportamiento anterior
+    return candidates[0]
+
+
+def actualizar_rtu_dataset(empresa: str, dominio: str | None = None) -> Generator[str, None, None]:
     """Importa/convierte SCADA (perfil default, solo SCADA) para consultar RTU."""
     empresa = (empresa or "").strip().upper()
     dominio = "CC"
@@ -104,13 +133,13 @@ def actualizar_rtu_dataset(empresa: str) -> Generator[str, None, None]:
         yield _result_line({"status": "ERROR", "message": "No se pudo resolver el servidor para la empresa seleccionada."})
         return
 
-    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "default")
+    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "default", "--dominio", dominio)
     rc_import = yield from _run_subprocess_stream(cmd_import, "IMPORT-SCADA", env, AUTOADA_DIR)
     if rc_import != 0:
         yield _result_line({"status": "ERROR", "message": f"Importación SCADA falló (rc={rc_import})."})
         return
 
-    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", dominio)
     rc_convert = yield from _run_subprocess_stream(cmd_convert, "CONVERT-SCADA", env, AUTOADA_DIR)
     if rc_convert != 0:
         yield _result_line({"status": "ERROR", "message": f"Conversión SCADA falló (rc={rc_convert})."})
@@ -119,10 +148,10 @@ def actualizar_rtu_dataset(empresa: str) -> Generator[str, None, None]:
     yield _result_line({"status": "SUCCESS", "message": "Datos SCADA actualizados."})
 
 
-def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict[str, Any]:
+def load_rtus(empresa: str, dominio: str | None = None, search: str | None = None, limit: int = 500) -> dict[str, Any]:
     """Lee RTUs/SAS desde SCADA (32_6.csv) y devuelve lista para UI."""
     empresa = (empresa or "").strip().upper()
-    scada_dir = os.path.join(OUT_ROOT, empresa, "SCADA")
+    scada_dir = _resolve_scada_dir(empresa, dominio)
     file_path = os.path.join(scada_dir, "32_6.csv")
     items: list[str] = []
     if not os.path.isfile(file_path):
@@ -197,7 +226,7 @@ def load_rtus(empresa: str, search: str | None = None, limit: int = 500) -> dict
     return {"empresa": empresa, "count": len(uniq), "rtus": uniq[:limit], "has_more": len(uniq) > limit}
 
 
-def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str]) -> Generator[str, None, None]:
+def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str], dominio: str | None = None) -> Generator[str, None, None]:
     """Ejecuta scripts.consultar_rtu con la lista seleccionada."""
     global last_consultar_rtu_result
     last_consultar_rtu_result = None
@@ -215,10 +244,13 @@ def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str]) -> Generator[
         yield _result_line({"status": "ERROR", "message": f"No se pudo construir el entorno: {exc}"})
         return
 
-    yield _summary_line(f"{empresa}: consulta iniciada", "info")
+    yield _summary_line(f"{empresa} ({dominio or 'SCADA'}): consulta iniciada", "info")
 
     rtus_arg = ", ".join(selected_rtus)
-    cmd = build_cmd("scripts.consultar_rtu", "--empresa", empresa, "--rtus", rtus_arg)
+    cmd_args = ["--empresa", empresa, "--rtus", rtus_arg]
+    if dominio:
+        cmd_args.extend(["--dominio", dominio])
+    cmd = build_cmd("scripts.consultar_rtu", *cmd_args)
     report_holder: dict[str, str | None] = {"path": None}
 
     stream = _run_subprocess_stream(cmd, "CONSULTAR-RTU", env, AUTOADA_DIR)

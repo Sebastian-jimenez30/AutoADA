@@ -34,10 +34,20 @@ os.makedirs(_log_dir, exist_ok=True)
 log_path = os.path.join(_log_dir, 'Scada_load.log')
 logger, logger_console = Logger.initlog(log_path, append=False)  # Sobrescribe el log al iniciar
 
+
+def _scada_path(root: str, empresa: str, dominio: str | None = None) -> str:
+    """
+    Construye ruta a la carpeta SCADA segun dominio.
+    Ej: dominio='qa' -> out/<empresa>/qaSCADA, sin dominio -> out/<empresa>/SCADA.
+    """
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.join(root, "out", empresa, suffix)
+
 def get_args():
     parser = argparse.ArgumentParser(description='Script para convertir bases de datos SCADA.')
     parser.add_argument('archivo_excel', type=str, help='Archivo Excel de entrada')
     parser.add_argument('empresa', type=str, help='Nombre de la empresa')
+    parser.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para segmentar rutas SCADA')
     return parser.parse_args()
 
 # =============================
@@ -818,7 +828,7 @@ def main():
     total_nuevas_signals = 0
 
     rt = _rt()
-    ruta_scada = os.path.join(rt, "out", empresa, "SCADA")
+    ruta_scada = _scada_path(rt, empresa, args.dominio)
 
     data = pd.read_csv(os.path.join(ruta_scada, '32_27.csv'), encoding='ISO-8859-1', low_memory=False)
 

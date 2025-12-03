@@ -66,6 +66,7 @@
               {% endfor %}
             </select>
           </div>
+          <input type="hidden" id="dominio" name="dominio" value="{{ dominios[0] if dominios else 'QA' }}">
 
           <div class="form-field form-field--full">
             <label for="archivo">Archivo Excel (cambio de nombres)</label>

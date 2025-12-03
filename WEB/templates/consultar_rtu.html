@@ -59,6 +59,7 @@
               {% endfor %}
             </select>
           </div>
+          <input type="hidden" id="dominio" name="dominio" value="{{ dominios[0] if dominios else 'CC' }}">
           <div class="form-field form-field--full">
             <label for="buscadorRtu">Buscar RTU/SAS</label>
             <input type="text" id="buscadorRtu" placeholder="Filtra por nombre o número">

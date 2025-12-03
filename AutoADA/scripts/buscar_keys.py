@@ -42,6 +42,7 @@ def get_args():
     parser = argparse.ArgumentParser(description='Script para buscar un ScadaKey en Bases de Datos')
     parser.add_argument('empresa', type=str, help='Nombre de la empresa')
     parser.add_argument('ruta', type=str, help='Ruta del archivo excel con los ScadaKeys')
+    parser.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para elegir carpeta SCADA')
     return parser.parse_args()
 
 # ---------- Config ----------
@@ -126,7 +127,8 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
 
     # Directorio base de datos convertidas (out/<EMPRESA>/SCADA|HSH|ODSTXT)
-    directorio_out = out_root
+    suffix = f"{args.dominio}SCADA" if args.dominio else "SCADA"
+    directorio_empresa = os.path.join(out_root, empresa)
 
     # Log
     log_path = os.path.join(log_dir, "buscar_keys.log")
@@ -143,7 +145,8 @@ def main():
 
     # Recorre SCADA / HSH / ODSTXT
     for folder in ['SCADA', 'HSH', 'ODSTXT']:
-        folder_path = os.path.join(directorio_out, empresa, folder)
+        folder_name = suffix if folder == 'SCADA' else folder
+        folder_path = os.path.join(directorio_empresa, folder_name)
         Logger.write_log().log_all("info", f"Buscando en {folder}", logger_console, logger)
         if not os.path.exists(folder_path):
             continue

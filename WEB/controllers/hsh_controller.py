@@ -795,9 +795,9 @@ def crear_tags_pipeline(
         pre_commands: list[tuple[str, list[str]] | None] = [
             ("IMPORT-PRINCIPAL", build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag")),
             ("IMPORT-RESPALDO", build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_crear_tag")) if respaldo and servidor_respaldo else None,
-            ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+            ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
             ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
-            ("CONVERT-SCA-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca")) if respaldo else None,
+            ("CONVERT-SCA-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC")) if respaldo else None,
             ("CONVERT-HSH-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh")) if respaldo else None,
         ]
 
@@ -1370,11 +1370,11 @@ def cambiar_key_pipeline(
         )
         if respaldo and servidor_respaldo
         else None,
-        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
         ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
         (
             "CONVERT-SCA-RESPALDO",
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -2051,11 +2051,11 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
         )
         if respaldo and servidor_respaldo
         else None,
-        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
         ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
         (
             "CONVERT-SCA-RESPALDO",
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -2483,11 +2483,11 @@ def eliminar_tags_pipeline(
         )
         if respaldo and servidor_respaldo
         else None,
-        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
         ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
         (
             "CONVERT-SCA-RESPALDO",
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -2714,11 +2714,11 @@ def validar_hsh_pipeline() -> Generator[str, None, None]:
         )
         if respaldo and servidor_respaldo
         else None,
-        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")),
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
         ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
         (
             "CONVERT-SCA-RESPALDO",
-            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca"),
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,

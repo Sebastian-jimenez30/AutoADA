@@ -22,25 +22,34 @@ def consultar_rtu_page(request: Request):
         "page_title": "Consultar RTU/SAS",
         "page_subtitle": "Selecciona RTU/SAS y genera el reporte desde SCADA.",
         "empresas": consultar_controller.get_empresas(),
+        "dominios": consultar_controller.get_dominios(),
     }
     return templates.TemplateResponse("consultar_rtu.html", context)
 
 
 @router.get("/consultar/rtu/list")
-def listar_rtus(empresa: str, search: str | None = None, limit: int = Query(500, ge=1, le=5000)):
+def listar_rtus(
+    empresa: str,
+    dominio: str | None = None,
+    search: str | None = None,
+    limit: int = Query(500, ge=1, le=5000),
+):
     if not empresa:
         raise HTTPException(status_code=400, detail="Empresa requerida.")
-    data = consultar_controller.load_rtus(empresa=empresa, search=search, limit=limit)
+    data = consultar_controller.load_rtus(empresa=empresa, dominio=dominio, search=search, limit=limit)
     return data
 
 
 @router.post("/consultar/rtu/actualizar")
-def actualizar_rtu_dataset(empresa: str = Form(...)):
+def actualizar_rtu_dataset(
+    empresa: str = Form(...),
+    dominio: str | None = Form(None),
+):
     if not empresa:
         raise HTTPException(status_code=400, detail="Empresa requerida.")
 
     def _pipeline():
-        yield from consultar_controller.actualizar_rtu_dataset(empresa)
+        yield from consultar_controller.actualizar_rtu_dataset(empresa, dominio=dominio)
 
     return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
 
@@ -49,12 +58,13 @@ def actualizar_rtu_dataset(empresa: str = Form(...)):
 def ejecutar_consultar_rtu(
     empresa: str = Form(...),
     rtus: list[str] = Form(...),
+    dominio: str | None = Form(None),
 ):
     if not empresa or not rtus:
         raise HTTPException(status_code=400, detail="Empresa y RTUs son requeridas.")
 
     def _pipeline():
-        yield from consultar_controller.consultar_rtu_pipeline(empresa, rtus)
+        yield from consultar_controller.consultar_rtu_pipeline(empresa, rtus, dominio=dominio)
 
     return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
 

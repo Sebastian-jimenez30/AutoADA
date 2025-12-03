@@ -47,6 +47,7 @@ def pruebas_itcosas_v2_page(request: Request):
 def ejecutar_pruebas_itcosas_v1(
     request: Request,
     empresa: str = Form(...),
+    dominio: str = Form("CC"),
     fecha: str = Form(...),
     hora_inicio: str = Form(...),
     hora_fin: str = Form(...),
@@ -78,7 +79,7 @@ def ejecutar_pruebas_itcosas_v1(
         try:
             yield from pruebas_controller.itcosas_v1_pipeline(
                 empresa=empresa,
-                dominio="CC",
+                dominio=dominio,
                 fecha=fecha,
                 hora_inicio=hora_inicio,
                 hora_fin=hora_fin,
@@ -101,6 +102,7 @@ def ejecutar_pruebas_itcosas_v1(
 def ejecutar_pruebas_itcosas_v2(
     request: Request,
     empresa: str = Form(...),
+    dominio: str = Form("CC"),
     fecha: str = Form(...),
     hora_inicio: str = Form(...),
     hora_fin: str = Form(...),
@@ -130,7 +132,7 @@ def ejecutar_pruebas_itcosas_v2(
         try:
             yield from pruebas_controller.itcosas_v2_pipeline(
                 empresa=empresa,
-                dominio="CC",
+                dominio=dominio,
                 fecha=fecha,
                 hora_inicio=hora_inicio,
                 hora_fin=hora_fin,

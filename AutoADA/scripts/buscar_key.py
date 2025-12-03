@@ -45,6 +45,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Script para buscar un ScadaKey en Bases de Datos")
     parser.add_argument("empresa", type=str, help="Nombre de la empresa")
     parser.add_argument("keys", type=str, help="ScadaKeys separadas por comas")
+    parser.add_argument("--dominio", type=str, default=None, help="Dominio (ej: CC, QA) para elegir carpeta SCADA")
     return parser.parse_args()
 
 def get_config():
@@ -100,6 +101,7 @@ def regex_from_pattern(pattern: str):
 def main():
     args = get_args()
     empresa = args.empresa
+    dominio = args.dominio
     keys = args.keys.split(",")  # Dividir las keys por comas
 
     # Bases de rutas
@@ -114,7 +116,8 @@ def main():
     os.makedirs(topath, exist_ok=True)
 
     # Directorio donde están los CSV convertidos (out/<EMPRESA>/<SCADA|HSH|ODSTXT>)
-    directorio_out = out_root
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    directorio_empresa = os.path.join(out_root, empresa)
 
     # Inicializar LOG
     log_path = os.path.join(log_dir, "buscar_key.log")
@@ -134,7 +137,8 @@ def main():
 
     # Recorrer carpetas de interés
     for folder in ["SCADA", "HSH", "ODSTXT"]:
-        folder_path = os.path.join(directorio_out, empresa, folder)
+        folder_name = suffix if folder == "SCADA" else folder
+        folder_path = os.path.join(directorio_empresa, folder_name)
         Logger.write_log().log_all("info", f"Buscando en {folder}", logger_console, logger)
 
         if not os.path.exists(folder_path):

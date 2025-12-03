@@ -49,7 +49,8 @@ def run(server: str,
         flex: bool,
         logger,
         logger_console,
-        evaluate_online: bool = True):
+        evaluate_online: bool = True,
+        dominio: Optional[str] = None):
     """
     Importa SCADA:
       - Limpia *.dat en la carpeta remota ANTES del dump (si hay remote_cmd).
@@ -82,7 +83,8 @@ def run(server: str,
     log_all('info', f'Origen remoto {frompath}', logger_console, logger)
 
     # ---- Preparar destino local ----
-    topath = os.path.join(input_root(), "db", empresa, "SCADA")
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    topath = os.path.join(input_root(), "db", empresa, suffix)
     os.makedirs(topath, exist_ok=True)
 
     try:

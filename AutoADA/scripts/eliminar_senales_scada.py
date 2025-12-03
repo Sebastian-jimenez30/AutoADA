@@ -37,11 +37,17 @@ def get_args():
     p = argparse.ArgumentParser(description='Eliminar señales SCADA (STATUS/ANALOG).')
     p.add_argument('archivo_excel', type=str, help='Archivo Excel de entrada')
     p.add_argument('empresa', type=str, help='Nombre de la empresa')
+    p.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para elegir carpeta SCADA')
     return p.parse_args()
 
 args = get_args()
 ARCHIVO_EXCEL = args.archivo_excel
 EMPRESA = args.empresa
+DOMINIO = getattr(args, "dominio", None)
+
+def _scada_path(root: str, empresa: str, dominio: str | None = None) -> str:
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return os.path.join(root, "out", empresa, suffix)
 
 # --------- IO / Carga ----------
 def cargar_datos_eliminar():
@@ -59,7 +65,7 @@ def cargar_datos_eliminar():
                 Logger.write_log().log_all("warning", f"Keys duplicadas en 'CAMBIO ELIMINAR': {duplicados['SCADA KEY'].tolist()}", logger_console, logger)
                 delete.drop_duplicates(subset=['SCADA KEY'], keep='first', inplace=True)
 
-        ruta_scada = os.path.join(ROOT, "out", EMPRESA, "SCADA")
+        ruta_scada = _scada_path(ROOT, EMPRESA, DOMINIO)
 
         scada_status_df = pd.read_csv(os.path.join(ruta_scada, '10_4.csv'), encoding='ISO-8859-1', low_memory=False, usecols=['Key','ICaddress','Name'])
         scada_analog_df = pd.read_csv(os.path.join(ruta_scada, '10_5.csv'), encoding='ISO-8859-1', low_memory=False, usecols=['Key','ICaddress','Name'])

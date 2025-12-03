@@ -153,7 +153,7 @@ def itcosas_v1_pipeline(
         )
 
     empresa = (empresa or "").strip().upper()
-    dominio = "CC"
+    dominio = (dominio or "CC").strip().upper()
 
     if not empresa or not dominio:
         payload = {"status": "ERROR", "message": "Debes seleccionar empresa y dominio."}
@@ -254,7 +254,7 @@ def itcosas_v1_pipeline(
             pass
 
     # Importar SCADA (perfil pruebas_pyp)
-    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp")
+    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp", "--dominio", dominio)
     rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
     if rc_import != 0:
         msg = f"Importación SCADA falló (rc={rc_import})."
@@ -522,7 +522,7 @@ def itcosas_v2_pipeline(
         )
 
     empresa = (empresa or "").strip().upper()
-    dominio = "CC"
+    dominio = (dominio or "CC").strip().upper()
 
     if not empresa:
         payload = {"status": "ERROR", "message": "Debes seleccionar empresa."}
@@ -630,7 +630,7 @@ def itcosas_v2_pipeline(
         return
 
     # Importar SCADA (perfil pruebas_pyp) y convertir SCADA
-    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp")
+    cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca", "--usecase", "pruebas_pyp", "--dominio", dominio)
     rc_import = yield from _stream_step("IMPORT-SCADA", cmd_import)
     if rc_import != 0:
         msg = f"Importación SCADA falló (rc={rc_import})."
@@ -647,7 +647,7 @@ def itcosas_v2_pipeline(
         extra_messages.append("Importación SCADA completada")
         yield line
 
-    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca")
+    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", dominio)
     rc_convert = yield from _stream_step("CONVERT-SCADA", cmd_convert)
     if rc_convert != 0:
         msg = f"Conversión SCADA falló (rc={rc_convert})."

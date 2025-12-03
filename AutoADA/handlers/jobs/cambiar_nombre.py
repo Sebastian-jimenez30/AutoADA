@@ -55,8 +55,8 @@ def ejecutar_cambiar_nombre_senales(app):
             messagebox.showerror('Error', 'No se pudo resolver el servidor para la empresa/dominio seleccionados.')
             return
         usecase = 'jobs_crear_senales'
-        cmd_import = build_cmd(m['importar'], servidor, empresa, 'sca', '--usecase', usecase)
-        cmd_convert = build_cmd(m['convertir'], empresa, 'jobs')
+        cmd_import = build_cmd(m['importar'], servidor, empresa, 'sca', '--usecase', usecase, '--dominio', dominio)
+        cmd_convert = build_cmd(m['convertir'], empresa, 'jobs', '--dominio', dominio)
         console(f'>> IMPORT usecase = {usecase}', 'info')
 
         def _after_convert(rc2: int):
@@ -65,7 +65,7 @@ def ejecutar_cambiar_nombre_senales(app):
                 _ui(app, lambda: btn.config(text=' Cambiar Nombre ', state='normal'))
                 return
             _ui(app, lambda: app.set_status('Aplicando cambio de nombre...'))
-            cmd_change = build_cmd(m['cambiar_nombre'], archivo, empresa)
+            cmd_change = build_cmd(m['cambiar_nombre'], archivo, empresa, '--dominio', dominio)
             console(f">> CMD[CAMBIO]: {' '.join(map(str, cmd_change))}", 'warn')
             app.tasks.run_subprocess(cmd_change, env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[CAMBIO] '), on_done=_finish)
 
@@ -82,7 +82,7 @@ def ejecutar_cambiar_nombre_senales(app):
         app.tasks.run_subprocess(cmd_import, resource_key=f'{empresa}:import:sca', env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[IMPORT] '), on_done=_after_import)
     else:
         _ui(app, lambda: app.set_status('Aplicando cambio de nombre (modo local)...'))
-        cmd_change = build_cmd(m['cambiar_nombre'], archivo, empresa)
+        cmd_change = build_cmd(m['cambiar_nombre'], archivo, empresa, '--dominio', dominio)
         console(f">> CMD[CAMBIO]: {' '.join(map(str, cmd_change))}", 'warn')
         app.tasks.run_subprocess(cmd_change, env=env, cwd=_runtime_root(), on_progress=_on_progress_factory(app, prefix='[CAMBIO] '), on_done=_finish)
 

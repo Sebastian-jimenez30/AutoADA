@@ -36,11 +36,18 @@ CSV_ENCODING = 'ISO-8859-1'
 EXCEL_ENCODING = 'utf-8'
 
 
+def _scada_path(root: Path, empresa: str, dominio: str | None = None) -> Path:
+    """Ruta a SCADA según dominio (default SCADA)."""
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    return root / "out" / empresa / suffix
+
+
 def get_args() -> argparse.Namespace:
     """Parsea argumentos de línea de comandos."""
     parser = argparse.ArgumentParser(description='Cambiar nombre/descripción de senales SCADA.')
     parser.add_argument('archivo_excel', help='Archivo Excel de entrada')
     parser.add_argument('empresa', help='Nombre de la empresa')
+    parser.add_argument('--dominio', type=str, default=None, help='Dominio (ej: CC, QA) para elegir carpeta SCADA')
     
     args = parser.parse_args()
     if not os.path.exists(args.archivo_excel):
@@ -49,16 +56,16 @@ def get_args() -> argparse.Namespace:
     return args
 
 
-def setup_directories(empresa: str) -> Tuple[Path, Path, Path]:
+def setup_directories(empresa: str, dominio: str | None = None) -> Tuple[Path, Path, Path]:
     """Configura y crea directorios necesarios."""
     root = Path(os.getcwd())
     output_dir = root / "out" / "Name"
     log_dir = root / "log"
-    scada_dir = root / "out" / empresa / "SCADA"
-    
+    scada_dir = _scada_path(root, empresa, dominio)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    
+
     return output_dir, log_dir, scada_dir
 
 
@@ -344,7 +351,8 @@ def main():
         args = get_args()
         archivo_excel = args.archivo_excel
         empresa = args.empresa
-        output_dir, log_dir, scada_dir = setup_directories(empresa)
+        dominio = getattr(args, "dominio", None)
+        output_dir, log_dir, scada_dir = setup_directories(empresa, dominio)
         
         # Inicializar logger
         logger, logger_console = Logger.initlog(log_dir / "cambiar_nombre_senales.log")

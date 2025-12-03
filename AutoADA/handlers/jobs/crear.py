@@ -90,8 +90,8 @@ def ejecutar_crear_senales(app):
             messagebox.showerror('Error', 'No se pudo resolver el servidor para la empresa/dominio seleccionados.')
             return
         usecase = 'jobs_crear_senales'
-        cmd_import = build_cmd(m['importar'], servidor, empresa, 'sca', '--usecase', usecase)
-        cmd_convert = build_cmd(m['convertir'], empresa, 'jobs')
+        cmd_import = build_cmd(m['importar'], servidor, empresa, 'sca', '--usecase', usecase, '--dominio', dominio)
+        cmd_convert = build_cmd(m['convertir'], empresa, 'jobs', '--dominio', dominio)
         console(f'>> IMPORT usecase = {usecase}', 'info')
 
         def _after_convert(rc2: int):
@@ -100,9 +100,10 @@ def ejecutar_crear_senales(app):
                 _ui(app, lambda: btn.config(text=' Crear Senales ', state='normal'))
                 return
             _ui(app, lambda: app.set_status('Escaneando archivo de senales...'))
-            cmd_scan = build_cmd(m['scan_data'], archivo, empresa)
+            cmd_scan = build_cmd(m['scan_data'], archivo, empresa, '--dominio', dominio)
             console(f">> CMD[SCAN]: {' '.join(map(str, cmd_scan))}", 'warn')
             app.tasks.run_subprocess(cmd_scan, env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[SCAN] '), on_done=lambda rc3: (_ui(app, lambda: app.set_status('Generando SCADA S-A...' if rc3 == 0 else 'Validacion fallida')), (lambda: _finish_with_validation_error(app, btn) if rc3 == 2 else (lambda cmd4: (console(f">> CMD[SCADA_S-A]: {' '.join(map(str, cmd4))}", 'warn'), app.tasks.run_subprocess(cmd4, env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[SCADA S-A] '), on_done=_finish)))(build_cmd(m['scada_sa'], empresa)) if rc3 == 0 else _finish(rc3))()))
+            app.tasks.run_subprocess(cmd_scan, env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[SCAN] '), on_done=lambda rc3: (_ui(app, lambda: app.set_status('Generando SCADA S-A...' if rc3 == 0 else 'Validacion fallida')), (lambda: _finish_with_validation_error(app, btn) if rc3 == 2 else (lambda cmd4: (console(f">> CMD[SCADA_S-A]: {' '.join(map(str, cmd4))}", 'warn'), app.tasks.run_subprocess(cmd4, env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[SCADA S-A] '), on_done=_finish)))(build_cmd(m['scada_sa'], empresa, '--dominio', dominio)) if rc3 == 0 else _finish(rc3))()))
 
         def _after_import(rc1: int):
             if rc1 != 0:
@@ -117,9 +118,9 @@ def ejecutar_crear_senales(app):
         app.tasks.run_subprocess(cmd_import, resource_key=f'{empresa}:import:sca', env=env, cwd=runtime_root, on_progress=_on_progress_factory(app, prefix='[IMPORT] '), on_done=_after_import)
     else:
         _ui(app, lambda: app.set_status('Escaneando archivo de senales (modo local)...'))
-        cmd_scan = build_cmd(m['scan_data'], archivo, empresa)
+        cmd_scan = build_cmd(m['scan_data'], archivo, empresa, '--dominio', dominio)
         console(f">> CMD[SCAN]: {' '.join(map(str, cmd_scan))}", 'warn')
-        app.tasks.run_subprocess(cmd_scan, env=env, cwd=_runtime_root(), on_progress=_on_progress_factory(app, prefix='[SCAN] '), on_done=lambda rc3: (_ui(app, lambda: app.set_status('Generando SCADA S-A...' if rc3 == 0 else 'Validacion fallida')), (lambda: _finish_with_validation_error(app, btn) if rc3 == 2 else (lambda cmd4: (console(f">> CMD[SCADA_S-A]: {' '.join(map(str, cmd4))}", 'warn'), app.tasks.run_subprocess(cmd4, env=env, cwd=_runtime_root(), on_progress=_on_progress_factory(app, prefix='[SCADA S-A] '), on_done=_finish)))(build_cmd(m['scada_sa'], empresa)) if rc3 == 0 else _finish(rc3))()))
+        app.tasks.run_subprocess(cmd_scan, env=env, cwd=_runtime_root(), on_progress=_on_progress_factory(app, prefix='[SCAN] '), on_done=lambda rc3: (_ui(app, lambda: app.set_status('Generando SCADA S-A...' if rc3 == 0 else 'Validacion fallida')), (lambda: _finish_with_validation_error(app, btn) if rc3 == 2 else (lambda cmd4: (console(f">> CMD[SCADA_S-A]: {' '.join(map(str, cmd4))}", 'warn'), app.tasks.run_subprocess(cmd4, env=env, cwd=_runtime_root(), on_progress=_on_progress_factory(app, prefix='[SCADA S-A] '), on_done=_finish)))(build_cmd(m['scada_sa'], empresa, '--dominio', dominio)) if rc3 == 0 else _finish(rc3))()))
 
 
 __all__ = ["ejecutar_crear_senales"]
