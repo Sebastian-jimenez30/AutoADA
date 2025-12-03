@@ -80,7 +80,7 @@ except Exception:
 # CLI
 # ---------------------------------
 def _args():
-    p = argparse.ArgumentParser(description="SOE Monarch (v2) — Enlaza HIS con SCADA (IOA y event).")
+    p = argparse.ArgumentParser(description="SOE Monarch (v2) – Enlaza HIS con SCADA (IOA y event).")
     p.add_argument("empresa", type=str, help="Empresa (para ubicar out/<empresa>/SCADA por defecto).")
     # alias
     p.add_argument("--his-data", "--his", dest="his_data", type=str, default=None,
@@ -94,6 +94,7 @@ def _args():
     p.add_argument("--prtu", type=str, default="auto",
                    help="Filtro pRTU para 32_10.csv; usa 'auto' para detectar; si no se detecta, NO filtra.")
     p.add_argument("--outdir", type=str, default=None, help="Carpeta de salida (default: out/pruebas).")
+    p.add_argument("--dominio", type=str, default=None, help="Dominio (ej: CC, QA) para elegir carpeta SCADA.")
     return p.parse_args()
 
 # ---------------------------------
@@ -108,8 +109,14 @@ def _read_csv(path: str, **kwargs) -> "pd.DataFrame":
             last = e
     raise RuntimeError(f"No se pudo leer '{path}' con codificaciones comunes. Último error: {last}")
 
-def _scada_dir_for(empresa: str) -> str:
-    return os.path.join(output_root(), "out", empresa, "SCADA")
+def _scada_dir_for(empresa: str, dominio: str | None = None) -> str:
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    base = os.path.join(output_root(), "out", empresa)
+    candidates = [os.path.join(base, suffix), os.path.join(base, suffix.lower()), os.path.join(base, "SCADA")]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[0]
 
 def _find_his_data(cwd: str) -> str:
     direct = os.path.join(cwd, "data.csv")
@@ -161,6 +168,7 @@ def main():
     args = _args()
 
     empresa = args.empresa.strip()
+    dominio = (args.dominio or "").strip().upper() or None
     outdir = args.outdir or os.path.join(output_root(), "out", "pruebas")
     os.makedirs(outdir, exist_ok=True)
 
@@ -185,7 +193,7 @@ def main():
         print(f"info: HIS -> {os.path.basename(his_path)}")
 
         # SCADA dir
-        scada_dir = args.scada_dir or _scada_dir_for(empresa)
+        scada_dir = args.scada_dir or _scada_dir_for(empresa, dominio)
         missing = _require_files(scada_dir, ["32_10.csv", "10_4.csv", "19_1.csv"])
         if missing:
             raise FileNotFoundError(f"Faltan archivos SCADA en {scada_dir}: " + ", ".join(missing))

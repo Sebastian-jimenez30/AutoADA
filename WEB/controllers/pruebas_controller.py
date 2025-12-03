@@ -724,7 +724,15 @@ def itcosas_v2_pipeline(
         yield line
 
     # SOE Monarch v2
-    scada_dir = os.path.join(OUT_ROOT, empresa, "SCADA")
+    scada_suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    scada_dir = os.path.join(OUT_ROOT, empresa, scada_suffix)
+    if not os.path.isdir(scada_dir):
+        lower_candidate = os.path.join(OUT_ROOT, empresa, scada_suffix.lower())
+        legacy_candidate = os.path.join(OUT_ROOT, empresa, "SCADA")
+        for candidate in (lower_candidate, legacy_candidate):
+            if os.path.isdir(candidate):
+                scada_dir = candidate
+                break
     his_path = artifacts["his_data"] if os.path.exists(artifacts["his_data"]) else artifacts["his_data_v2"]
     faltantes = []
     for fname in ("32_10.csv", "10_4.csv", "19_1.csv"):
@@ -748,6 +756,7 @@ def itcosas_v2_pipeline(
         f"--his={his_path}",
         f"--outdir={outdir}",
         f"--checklist={checklist}",
+        f"--dominio={dominio}",
     )
     rc_monarch = yield from _stream_step("SOE-MONARCH-V2", cmd_monarch)
     if rc_monarch != 0:
