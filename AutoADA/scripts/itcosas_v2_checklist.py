@@ -13,7 +13,8 @@ import sys
 import glob
 import argparse
 import subprocess
-from typing import Optional, List
+import unicodedata
+from typing import Optional, List, Dict
 
 import numpy as np
 
@@ -121,6 +122,62 @@ def _fmt_time_mmm(dt: "pd.Timestamp") -> str:
     return dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]  # milisegundos
 
 
+def _normalize_header(col: str) -> str:
+    if col is None:
+        return ""
+    # Remover acentos, espacios, guiones y subrayados, y bajar a minúsculas
+    nfkd = unicodedata.normalize("NFKD", str(col))
+    no_accents = "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+    return (
+        no_accents.replace(" ", "")
+        .replace("_", "")
+        .replace("-", "")
+        .lower()
+    )
+
+
+def _map_checklist_columns(df_checklist: "pd.DataFrame") -> "pd.DataFrame":
+    aliases: Dict[str, str] = {
+        "ioa": "IOA",
+        "scadakey": "SCADAkey",
+        "scadakey2": "SCADAkey",  # por si vienen sufijos
+        "scadakey1": "SCADAkey",
+        "scadakeyv2": "SCADAkey",
+        "scadakeys": "SCADAkey",
+        "scadakey_": "SCADAkey",
+        "aor": "AOR",
+        "type": "type",
+        "station": "Station",
+        "estacion": "Station",
+        "name": "Name",
+        "prueba": "Prueba",
+    }
+
+    mapping: Dict[str, str] = {}
+    for col in df_checklist.columns:
+        norm = _normalize_header(col)
+        if norm in aliases and aliases[norm] not in mapping.values():
+            mapping[col] = aliases[norm]
+
+    required = ["IOA", "SCADAkey", "AOR", "type", "Station", "Name", "Prueba"]
+    missing = [req for req in required if req not in mapping.values()]
+    if missing:
+        raise KeyError(
+            f"Error: Faltan columnas requeridas ({', '.join(missing)}) en {','.join(df_checklist.columns)}"
+        )
+
+    return df_checklist.rename(columns=mapping)[required]
+
+
+def _delete_temp(path: str):
+    try:
+        base = os.path.basename(path)
+        if base.startswith("tmp") and "pruebas_inputs" in os.path.abspath(path).replace("\\", "/"):
+            os.remove(path)
+    except Exception:
+        pass
+
+
 # -----------------------------
 # Main
 # -----------------------------
@@ -138,11 +195,14 @@ def main():
 
     try:
         base_dir = outdir  # usar outdir como base para defaults
+        temp_inputs: list[str] = []
 
         # Resolver rutas por defecto si no se pasaron
         checklist_path = args.checklist or _find_first(["CheckList_*.xlsx", "CheckList_*.xlsm"], base_dir)
         if not checklist_path or not os.path.isfile(checklist_path):
             raise FileNotFoundError("No se encontró el archivo de checklist (intenta --checklist=...).")
+        if os.path.basename(checklist_path).startswith("tmp"):
+            temp_inputs.append(checklist_path)
 
         soe_local_path = args.soe_local or os.path.join(base_dir, "SOE_Local.csv")
         if not os.path.isfile(soe_local_path):
@@ -180,14 +240,8 @@ def main():
         # ----------------- Cargar Checklist (STATUS) -----------------
         dtype_dict_checklist = {"SCADAkey": str}
         df_checklist = pd.read_excel(checklist_path, sheet_name=args.sheet_status, dtype=dtype_dict_checklist, engine="openpyxl")
-        # normalizar headers (sin espacios)
-        df_checklist.columns = df_checklist.columns.str.replace(" ", "", regex=False)
-        columnas_checklist = ["IOA", "SCADAkey", "AOR", "type", "Station", "Name", "Prueba"]
-        # tomar solo columnas deseadas (si faltan, levanta como en el suelto)
-        try:
-            df_checklist = df_checklist[columnas_checklist]
-        except KeyError as e:
-            raise KeyError(f"Error: La columna {e} no está presente en {os.path.basename(checklist_path)}")
+        # normalizar headers tolerando variaciones y acentos
+        df_checklist = _map_checklist_columns(df_checklist)
 
         # IOA como enteros (nullable)
         df_checklist = df_checklist[df_checklist["IOA"].notna()].copy()
@@ -358,6 +412,9 @@ def main():
         wl.log_all("error", f"[CHECKLIST_V2] Error: {e}", logger_console, logger)
         print(f"error: {e}")
         sys.exit(1)
+    finally:
+        for tmp in temp_inputs if 'temp_inputs' in locals() else []:
+            _delete_temp(tmp)
 
 
 if __name__ == "__main__":
