@@ -449,6 +449,27 @@ def main():
             ws_soe.auto_filter.ref = ws_soe.dimensions
             ws_soe.freeze_panes = "A2"
 
+            # Hoja checklist derivada de SOE (igual al flujo v1)
+            cols_checklist = [
+                "time_monarch",
+                "station_name_monarch",
+                "point_name_monarch",
+                "state_text_monarch",
+                "osi_key_monarch",
+                "timequality_monarch",
+                "scanquality_monarch",
+            ]
+            df_ck = pd.DataFrame()
+            for col in cols_checklist[:-2]:
+                df_ck[col] = df_soe_comb.get(col, "")
+            valido_series = df_soe_comb.get("valido")
+            df_ck["timequality_monarch"] = valido_series
+            df_ck["scanquality_monarch"] = valido_series
+            df_ck.to_excel(writer, index=False, sheet_name="checklist")
+            ws_ck = writer.sheets["checklist"]
+            ws_ck.auto_filter.ref = ws_ck.dimensions
+            ws_ck.freeze_panes = "A2"
+
         print(out_xlsx)  # la UI captura esta ruta
         print("info: SOE_completo.xlsx generado.")
 
