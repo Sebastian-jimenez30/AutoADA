@@ -793,8 +793,8 @@ def crear_tags_pipeline(
         yield from _yield_summary("Actualizando datos locales (importar/convertir)")
 
         pre_commands: list[tuple[str, list[str]] | None] = [
-            ("IMPORT-PRINCIPAL", build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag")),
-            ("IMPORT-RESPALDO", build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_crear_tag")) if respaldo and servidor_respaldo else None,
+            ("IMPORT-PRINCIPAL", build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_crear_tag", "--dominio", "CC")),
+            ("IMPORT-RESPALDO", build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_crear_tag", "--dominio", "CC")) if respaldo and servidor_respaldo else None,
             ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
             ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
             ("CONVERT-SCA-RESPALDO", build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC")) if respaldo else None,
@@ -862,7 +862,7 @@ def crear_tags_pipeline(
                 verification_failed = True
                 continue
 
-            cmd_import_hsh = build_cmd("scripts.importar_all", server_for_emp, emp, "hsh", "--usecase", "hsh_crear_tag")
+            cmd_import_hsh = build_cmd("scripts.importar_all", server_for_emp, emp, "hsh", "--usecase", "hsh_crear_tag", "--dominio", "CC")
             rc_import = yield from _stream_script(f"VER-IMPORT-{emp}", cmd_import_hsh)
             if rc_import != 0:
                 msg = f"{emp}: importación HSH falló (rc={rc_import})."
@@ -1362,11 +1362,11 @@ def cambiar_key_pipeline(
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
-            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key", "--dominio", "CC"),
         ),
         (
             "IMPORT-RESPALDO",
-            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -2475,11 +2475,11 @@ def eliminar_tags_pipeline(
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
-            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag", "--dominio", "CC"),
         ),
         (
             "IMPORT-RESPALDO",
-            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag"),
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -2706,11 +2706,11 @@ def validar_hsh_pipeline() -> Generator[str, None, None]:
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
-            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_validar"),
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_validar", "--dominio", "CC"),
         ),
         (
             "IMPORT-RESPALDO",
-            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_validar"),
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_validar", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
