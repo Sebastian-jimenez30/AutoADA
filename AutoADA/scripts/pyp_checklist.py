@@ -166,6 +166,8 @@ def main():
     cant_true = df_checklist["IOA_in_SE"].sum()
     total_ioa = len(df_checklist["IOA"])
     _log(f"IOA en checklist: {total_ioa} | Encontradas en Direcciones: {cant_true}")
+    _log(f"SOE_Local: {len(df_soe_local)} filas | IOA únicas: {df_soe_local['IOA_local'].nunique()}")
+    _log(f"SOE_Monarch: {len(df_soe_monarch)} filas | IOA únicas: {df_soe_monarch['IOA_monarch'].nunique()}")
 
     if cant_true < total_ioa:
         faltantes_ioa = df_checklist.loc[~df_checklist["IOA_in_SE"], "IOA"]
@@ -234,9 +236,34 @@ def main():
     if resultados:
         df_soe_combinado = pd.concat(resultados, ignore_index=True)
         _log(f"SOE combinado: {len(df_soe_combinado)} registros.")
+        _log(f"IOA combinadas únicas: {df_soe_combinado.get('IOA_monarch', pd.Series(dtype='Int32')).nunique()}")
+        try:
+            _log(f"Ejemplos de tiempos combinados: {df_soe_combinado[['time_local','time_monarch']].head(3).to_dict(orient='records')}")
+        except Exception:
+            pass
     else:
         _log("No se encontraron eventos combinados. Se creará DataFrame vacío.", "WARN")
-        df_soe_combinado = pd.DataFrame()
+        # Mantener columnas esperadas para que las hojas Excel no queden sin encabezados
+        expected_cols = [
+            "time_local",
+            "milli_secs_local",
+            "Tension_local",
+            "Bahia_local",
+            "Signal_local",
+            "IOA_local",
+            "event_local",
+            "time_monarch",
+            "milli_secs_monarch",
+            "station_name_monarch",
+            "point_name_monarch",
+            "state_text_monarch",
+            "IOA_monarch",
+            "event_monarch",
+            "timequality_monarch",
+            "scanquality_monarch",
+            "valido",
+        ]
+        df_soe_combinado = pd.DataFrame(columns=expected_cols)
 
     # --- Validaciones
     _log("Aplicando validaciones…")
