@@ -398,7 +398,12 @@ def _load_scada_data(out_root_path: Optional[str], empresas: Iterable[str]
         empresa_norm = _norm_key(empresa)
         found_for_empresa = False
         for base_dir in _candidate_base_dirs(empresa_norm, out_root_path):
-            scada_dir = base_dir / "SCADA"
+            # HSH siempre trabaja con SCADA de dominio CC por defecto
+            scada_dir = base_dir / "CCSCADA"
+            if not scada_dir.is_dir():
+                scada_dir = base_dir / "ccscada"
+            if not scada_dir.is_dir():
+                scada_dir = base_dir / "SCADA"
             print(f"[INFO] Buscando SCADA para {empresa_norm} en: {scada_dir}")
             if not scada_dir.is_dir():
                 continue

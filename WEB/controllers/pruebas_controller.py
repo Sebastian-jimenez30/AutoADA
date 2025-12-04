@@ -271,6 +271,24 @@ def itcosas_v1_pipeline(
         extra_messages.append("Importación SCADA completada")
         yield line
 
+    # Convertir SCADA (para asegurar 32_10/10_4/19_1 actualizados)
+    cmd_convert = build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", dominio)
+    rc_convert = yield from _stream_step("CONVERT-SCADA", cmd_convert)
+    if rc_convert != 0:
+        msg = f"Conversión SCADA falló (rc={rc_convert})."
+        extra_messages.append(msg)
+        line = _summary_line(msg, "error")
+        if line:
+            yield line
+        payload = {"status": "ERROR", "message": msg}
+        _store(payload["status"], payload["message"], extra={"details": extra_messages})
+        yield _result_line(payload)
+        return
+    line = _summary_line("Conversión SCADA completada", "success")
+    if line:
+        extra_messages.append("Conversión SCADA completada")
+        yield line
+
     # Paso IOA
     cmd_ioa = build_cmd("scripts.itcosas_v1_ioa", f"--tmwgateway={tmw}", f"--varexp={varexp}", f"--outdir={outdir}")
     rc_ioa = yield from _stream_step("IOA", cmd_ioa)
