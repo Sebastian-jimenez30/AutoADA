@@ -29,7 +29,7 @@
 
 body {
   margin: 0;
-  background: var(--app-background);
+  background: radial-gradient(120% 120% at 10% 20%, rgba(254, 80, 0, 0.18) 0%, rgba(11, 79, 148, 0.06) 55%, rgba(10, 30, 63, 0.45) 100%);
   color: var(--text);
   min-height: 100vh;
   display: flex;
@@ -754,4 +754,3 @@ a {
     padding: 28px 24px 36px;
   }
 }
-

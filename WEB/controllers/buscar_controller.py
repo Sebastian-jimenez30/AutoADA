@@ -145,7 +145,7 @@ def buscar_key_pipeline(
             yield line
         return
 
-    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
+    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa, dominio)
     needs_update = forzar_actualizacion or (not ready)
     yield f"Datos locales disponibles: {ready} (forzar={forzar_actualizacion})\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"
@@ -445,7 +445,7 @@ def buscar_keys_pipeline(
             yield line
         return
 
-    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa)
+    ready, details = find_mode_data_ready(AUTOADA_DIR, empresa, dominio)
     needs_update = forzar_actualizacion or (not ready)
     yield f"Datos locales disponibles: {ready} (forzar={forzar_actualizacion})\n"
     yield f"Detalle OUT/SCADA/HSH/ODSTXT: {details}\n"

@@ -2043,11 +2043,11 @@ def confirmar_cambiar_pipeline() -> Generator[str, None, None]:
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
-            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_cambiar_key", "--dominio", "CC"),
         ),
         (
             "IMPORT-RESPALDO",
-            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key"),
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_cambiar_key", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,

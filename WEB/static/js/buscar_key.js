@@ -34,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultBaseUrl =
     form.dataset.resultUrl || "/buscar/key/result/data";
   const fileDownloadBase = form.dataset.fileDownload || "";
-  const actualizarInput = document.getElementById("actualizarFlag");
+  const actualizarInput = document.getElementById("actualizar");
   const actualizarBtn = document.getElementById("actualizarBtn");
   let updateFormData = null;
   const piUrl = form.dataset.piUrl || "";
@@ -91,6 +91,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
   let runApply = false;
+
+  const scrollToOutputs = () => {
+    const container =
+      document.querySelector(".buscarkey-output") ||
+      document.querySelector(".output-panels") ||
+      document.getElementById("summaryPanel");
+    if (container && typeof container.scrollIntoView === "function") {
+      container.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const activatePanel = (target) => {
     tabs.forEach((tab) => {
@@ -309,18 +319,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const ul = document.createElement("ul");
     list.forEach((filePath) => {
+      const displayName = (filePath || "").split(/[/\\\\]/).pop() || filePath;
       const li = document.createElement("li");
       const href = buildDownloadUrl(filePath);
       if (href) {
         const link = document.createElement("a");
         link.href = href;
-        link.textContent = filePath;
+        link.textContent = displayName;
         link.target = "_blank";
         link.rel = "noopener";
         li.appendChild(link);
       } else {
         const span = document.createElement("span");
-        span.textContent = filePath;
+        span.textContent = displayName;
         li.appendChild(span);
       }
       ul.appendChild(li);
@@ -810,6 +821,9 @@ const hideConfirmModal = () => {
       }
     }
 
+    if (finalResult && finalResult.status === "ERROR" && finalResult.message) {
+      appendSummaryMessage(finalResult.message, "error");
+    }
     return finalResult;
   };
 
@@ -919,6 +933,7 @@ const hideConfirmModal = () => {
   const launchRun = async () => {
     hideConfirmModal();
     activatePanel("summary");
+    scrollToOutputs();
     resetResultsView();
     setStatus("Ejecutando...");
     startSummaryRun();
@@ -995,6 +1010,7 @@ const hideConfirmModal = () => {
       piBtn.disabled = true;
       ejecutarBtn && (ejecutarBtn.disabled = true);
       verificarBtn && (verificarBtn.disabled = true);
+      scrollToOutputs();
       await ejecutarConsultaPi();
       piBtn.disabled = false;
       ejecutarBtn && (ejecutarBtn.disabled = false);

@@ -338,16 +338,17 @@ def ejecutar_validacion_hsh(app):
         empresa,
         "sca,hsh",
         "--usecase", "hsh_validar",
+        "--dominio", dominio,
     )
     cmd_import_respaldo = (
-        build_cmd(mod_importar, servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_validar")
+        build_cmd(mod_importar, servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_validar", "--dominio", dominio)
         if respaldo and servidor_respaldo else None
     )
 
     # Converts empresa principal (granulares con --only)
 
     cmd_conv_sca = build_cmd(mod_convertir, empresa,
-                             "Validar_HSH", "--only", "sca")
+                             "Validar_HSH", "--only", "sca", "--dominio", dominio)
 
     cmd_conv_hsh = build_cmd(mod_convertir, empresa,
                              "Validar_HSH", "--only", "hsh")
@@ -363,7 +364,7 @@ def ejecutar_validacion_hsh(app):
     if respaldo:
 
         cmd_conv_sca_res = build_cmd(
-            mod_convertir, respaldo, "Validar_HSH", "--only", "sca")
+            mod_convertir, respaldo, "Validar_HSH", "--only", "sca", "--dominio", dominio)
 
         cmd_conv_hsh_res = build_cmd(
             mod_convertir, respaldo, "Validar_HSH", "--only", "hsh")

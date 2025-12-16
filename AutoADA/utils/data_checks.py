@@ -31,7 +31,7 @@ def _out_candidates(base_dir: str | None, empresa: str) -> list[str]:
     return out
 
 
-def find_mode_data_ready(base_dir: str | None, empresa: str) -> tuple[bool, dict]:
+def find_mode_data_ready(base_dir: str | None, empresa: str, dominio: str | None = None) -> tuple[bool, dict]:
     """
     Datos mínimos para Buscar Key/Keys:
       - SCADA: cualquier .csv
@@ -40,9 +40,16 @@ def find_mode_data_ready(base_dir: str | None, empresa: str) -> tuple[bool, dict
     Se considera OK si *cualquiera* de las dos raíces (exe o run local) cumple.
     """
     outs = _out_candidates(base_dir, empresa)
+    suffix = f"{dominio}SCADA" if dominio else "SCADA"
+    suffix_lower = suffix.lower()
 
     out_ok   = any(os.path.isdir(p) for p in outs)
-    scada_ok = any(_dir_has_exts(os.path.join(p, "SCADA"),  ["csv"])       for p in outs)
+    scada_ok = any(
+        _dir_has_exts(os.path.join(p, suffix), ["csv"])
+        or _dir_has_exts(os.path.join(p, suffix_lower), ["csv"])
+        or _dir_has_exts(os.path.join(p, "SCADA"), ["csv"])
+        for p in outs
+    )
     hsh_ok   = any(
         os.path.isfile(os.path.join(p, "HSH", "groups.csv")) and
         os.path.isfile(os.path.join(p, "HSH", "lookup_table.csv"))

@@ -49,6 +49,15 @@ document.addEventListener("DOMContentLoaded", () => {
   let resultsLoading = false;
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
+  const scrollToOutputs = () => {
+    const container =
+      document.querySelector(".buscarkey-output") ||
+      document.querySelector(".output-panels") ||
+      document.getElementById("summaryPanel");
+    if (container && typeof container.scrollIntoView === "function") {
+      container.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const buildResultUrl = (sheetValue) => {
     try {
@@ -317,18 +326,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const ul = document.createElement("ul");
     list.forEach((filePath) => {
+      const displayName = (filePath || "").split(/[/\\\\]/).pop() || filePath;
       const li = document.createElement("li");
       const href = buildDownloadUrl(filePath);
       if (href) {
         const link = document.createElement("a");
         link.href = href;
-        link.textContent = filePath;
+        link.textContent = displayName;
         link.target = "_blank";
         link.rel = "noopener";
         li.appendChild(link);
       } else {
         const span = document.createElement("span");
-        span.textContent = filePath;
+        span.textContent = displayName;
         li.appendChild(span);
       }
       ul.appendChild(li);
@@ -691,6 +701,9 @@ document.addEventListener("DOMContentLoaded", () => {
         appendLog(`${leftover}\n`);
       }
     }
+    if (finalResult && finalResult.status === "ERROR" && finalResult.message) {
+      appendSummaryMessage(finalResult.message, "error");
+    }
     return finalResult;
   };
 
@@ -707,6 +720,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (logOutput) {
       logOutput.textContent = "";
     }
+    scrollToOutputs();
     setStatus("Actualizando datos...", "muted");
     startSummaryRun();
     try {
@@ -759,6 +773,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (logOutput) {
       logOutput.textContent = "";
     }
+    scrollToOutputs();
     setStatus("Consultando...", "muted");
     startSummaryRun();
     activatePanel("summary");
