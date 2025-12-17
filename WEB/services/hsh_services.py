@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -322,6 +323,111 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
       if record_status:
         record_status(emp, "pi", ok, message)
 
+    def _safe_int(value: str | None, default: int) -> int:
+      try:
+        return int(str(value).strip())
+      except Exception:
+        return default
+
+    pi_max_attempts_per_tag = max(1, _safe_int(os.environ.get("PI_TAG_MAX_ATTEMPTS"), 2))
+    pi_command_timeout_s = max(3, _safe_int(os.environ.get("PI_COMMAND_TIMEOUT_S"), 20))
+    pi_connect_timeout_s = max(3, _safe_int(os.environ.get("PI_CONNECT_TIMEOUT_S"), 10))
+    pi_tunnel_timeout_s = max(3, _safe_int(os.environ.get("PI_TUNNEL_TIMEOUT_S"), 10))
+    scada_stat_timeout_s = max(3, _safe_int(os.environ.get("SCADA_STAT_TIMEOUT_S"), 8))
+
+    online_scada_cache: dict[str, str | None] = {}
+
+    def _exec_command_with_timeout(
+      client: paramiko.SSHClient,
+      command: str,
+      timeout_s: int,
+    ) -> tuple[str, str, bool]:
+      transport = client.get_transport()
+      if transport is None or not transport.is_active():
+        return "", "SSH transport inactivo", True
+      channel = transport.open_session()
+      channel.settimeout(1.0)
+      stdout_chunks: list[str] = []
+      stderr_chunks: list[str] = []
+      timed_out = False
+      start = time.monotonic()
+      try:
+        channel.exec_command(command)
+        while True:
+          if channel.recv_ready():
+            stdout_chunks.append(channel.recv(65536).decode("utf-8", "ignore"))
+          if channel.recv_stderr_ready():
+            stderr_chunks.append(channel.recv_stderr(65536).decode("utf-8", "ignore"))
+          if channel.exit_status_ready():
+            while channel.recv_ready():
+              stdout_chunks.append(channel.recv(65536).decode("utf-8", "ignore"))
+            while channel.recv_stderr_ready():
+              stderr_chunks.append(channel.recv_stderr(65536).decode("utf-8", "ignore"))
+            break
+          if time.monotonic() - start > float(timeout_s):
+            timed_out = True
+            break
+          time.sleep(0.1)
+      finally:
+        try:
+          channel.close()
+        except Exception:
+          pass
+      return "".join(stdout_chunks), "".join(stderr_chunks).strip(), timed_out
+
+    def _parse_online_scada(output: str) -> str | None:
+      for line in (output or "").splitlines():
+        if "Status: ONLINE" in line and "Source" in line:
+          try:
+            server_part = line.split(":")[1]
+            online_server = server_part.split("Status")[0].strip()
+            return online_server or None
+          except Exception:
+            continue
+      return None
+
+    def _resolve_online_scada(prefix: str) -> str | None:
+      if prefix in online_scada_cache:
+        return online_scada_cache[prefix]
+
+      online_host: str | None = None
+      last_err: str | None = None
+      for sca_suffix in ("sca01", "sca02"):
+        sca_host = f"{prefix}{sca_suffix}"
+        client = None
+        try:
+          client = sshserver(sca_host, logger, logger_console)
+          if client is None:
+            last_err = f"{sca_host}: sshserver devolvio None"
+            continue
+          stdout, stderr, timed_out = _exec_command_with_timeout(
+            client,
+            ". ~/.bash_profile && dbstat 10",
+            scada_stat_timeout_s,
+          )
+          if timed_out:
+            last_err = f"{sca_host}: dbstat timeout"
+            continue
+          if stderr:
+            last_err = f"{sca_host}: {stderr}"
+          online = _parse_online_scada(stdout)
+          if online:
+            online_host = online
+            break
+        except Exception as exc:
+          last_err = str(exc)
+        finally:
+          try:
+            if client is not None:
+              client.close()
+          except Exception:
+            pass
+
+      if online_host is None and last_err:
+        console_write(f"[PI] No se pudo determinar SCADA online para {prefix} ({last_err})", "warn")
+      online_scada_cache[prefix] = online_host
+      return online_host
+
     for emp_raw, tags in sorted(tags_by_empresa.items(), key=lambda item: item[0]):
       emp_u = str(emp_raw).upper()
       tag_list = sorted({t.strip() for t in tags if t})
@@ -351,130 +457,156 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
       for tag in tag_list:
         tag_rows: Optional[List[Dict[str, str]]] = None
         last_error: Optional[str] = None
+        attempts = 0
 
         for prefix in prefixes:
-          if tag_rows:
+          if tag_rows or attempts >= pi_max_attempts_per_tag:
             break
 
-          for sca_suffix in ("sca01", "sca02"):
-            sca_host = f"{prefix}{sca_suffix}"
-            console_write(f"[PI] Conectando a SCADA {sca_host} para {tag} ...", "info")
-            client_sca = None
+          sca_host = _resolve_online_scada(prefix)
+          if not sca_host:
+            last_error = "no se detectó SCADA ONLINE"
+            console_write(
+              f"[PI] {emp_u}: no se detectó SCADA ONLINE para prefijo {prefix}", "warn"
+            )
+            _record(emp_u, f"{tag}: prefijo {prefix} sin SCADA ONLINE", None)
+            continue
+
+          console_write(f"[PI] Conectando a SCADA {sca_host} para {tag} ...", "info")
+          client_sca = None
+          try:
+            client_sca = sshserver(sca_host, logger, logger_console)
+          except Exception as exc:
+            last_error = str(exc)
+            console_write(f"[PI] Error conectando a SCADA {sca_host}: {exc}", "error")
+            _record(emp_u, f"{tag}: error conectando a {sca_host}: {exc}", None)
+            continue
+
+          if client_sca is None:
+            last_error = "sshserver devolvió None"
+            console_write(f"[PI] {sca_host}: sshserver devolvió None", "error")
+            _record(emp_u, f"{tag}: {sca_host} sshserver devolvió None", None)
+            continue
+
+          transport = client_sca.get_transport()
+          if transport is None or not transport.is_active():
+            last_error = "transporte SSH inactivo"
+            console_write(f"[PI] {sca_host}: transporte SSH inactivo", "error")
+            _record(emp_u, f"{tag}: {sca_host} transporte SSH inactivo", None)
             try:
-              client_sca = sshserver(sca_host, logger, logger_console)
-            except Exception as exc:
-              last_error = str(exc)
-              console_write(f"[PI] Error conectando a SCADA {sca_host}: {exc}", "error")
-              _record(emp_u, f"{tag}: error conectando a {sca_host}: {exc}", None)
-              continue
+              client_sca.close()
+            except Exception:
+              pass
+            continue
 
-            if client_sca is None:
-              last_error = "sshserver devolvió None"
-              console_write(f"[PI] {sca_host}: sshserver devolvió None", "error")
-              _record(emp_u, f"{tag}: {sca_host} sshserver devolvió None", None)
-              continue
+          try:
+            for his_suffix in ("his01", "his02"):
+              if tag_rows or attempts >= pi_max_attempts_per_tag:
+                break
+              attempts += 1
 
-            transport = client_sca.get_transport()
-            if transport is None or not transport.is_active():
-              last_error = "transporte SSH inactivo"
-              console_write(f"[PI] {sca_host}: transporte SSH inactivo", "error")
-              _record(emp_u, f"{tag}: {sca_host} transporte SSH inactivo", None)
+              his_host = f"{prefix}{his_suffix}"
+              channel = None
+              client_his = None
               try:
-                client_sca.close()
-              except Exception:
-                pass
-              continue
+                console_write(
+                  f"[PI]   Tunel a {his_host} para {tag} (intento {attempts}/{pi_max_attempts_per_tag}) ...",
+                  "info",
+                )
+                channel = transport.open_channel(
+                  "direct-tcpip",
+                  (his_host, 22),
+                  ("127.0.0.1", 0),
+                  timeout=pi_tunnel_timeout_s,
+                )
+                client_his = paramiko.SSHClient()
+                client_his.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                client_his.connect(
+                  hostname=his_host,
+                  username=pi_user,
+                  password=pi_pass,
+                  sock=channel,
+                  look_for_keys=False,
+                  allow_agent=False,
+                  timeout=pi_connect_timeout_s,
+                  auth_timeout=pi_connect_timeout_s,
+                  banner_timeout=pi_connect_timeout_s,
+                )
 
-            try:
-              for his_suffix in ("his01", "his02"):
-                his_host = f"{prefix}{his_suffix}"
-                channel = None
-                client_his = None
-                try:
-                  console_write(f"[PI]   Tunel a {his_host} para {tag} ...", "info")
-                  channel = transport.open_channel("direct-tcpip", (his_host, 22), ("127.0.0.1", 0))
-                  client_his = paramiko.SSHClient()
-                  client_his.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                  client_his.connect(
-                    hostname=his_host,
-                    username=pi_user,
-                    password=pi_pass,
-                    sock=channel,
-                    look_for_keys=False,
+                command = _encoded_ps_single(emp_u, tag, pi_server)
+                if Logger is not None and logger is not None:
+                  Logger.write_log().log_all("info", f"[PI] comando {command}", logger_console, logger)
+
+                output, err_output, timed_out = _exec_command_with_timeout(
+                  client_his,
+                  command,
+                  pi_command_timeout_s,
+                )
+                if timed_out:
+                  last_error = f"timeout ({pi_command_timeout_s}s)"
+                  console_write(f"[PI] {his_host}: timeout consultando {tag}", "warn")
+                  _record(emp_u, f"{tag}: {his_host} timeout", None)
+                  continue
+
+                if err_output:
+                  console_write(f"[PI] {his_host} STDERR: {err_output}", "warn")
+
+                marker = "__PI_JSON__:"
+                idx = output.find(marker)
+                if idx == -1:
+                  last_error = err_output or output.strip() or "respuesta inesperada"
+                  console_write(f"[PI] {his_host}: respuesta inesperada -> {last_error}", "warn")
+                  _record(emp_u, f"{tag}: {his_host} respuesta inesperada", None)
+                  continue
+
+                json_text = output[idx + len(marker) :].strip()
+                raw_rows = json.loads(json_text) if json_text else []
+
+                normalized: List[Dict[str, str]] = []
+                if isinstance(raw_rows, list):
+                  for item in raw_rows:
+                    if isinstance(item, dict):
+                      normalized.append(
+                        {
+                          "Name": str(item.get("Name", item.get("name", "?"))),
+                          "Value": str(item.get("Value", item.get("value", ""))),
+                          "Timestamp": str(item.get("Timestamp", item.get("timestamp", ""))),
+                        }
+                      )
+                elif isinstance(raw_rows, dict):
+                  normalized.append(
+                    {
+                      "Name": str(raw_rows.get("Name", raw_rows.get("name", "?"))),
+                      "Value": str(raw_rows.get("Value", raw_rows.get("value", ""))),
+                      "Timestamp": str(raw_rows.get("Timestamp", raw_rows.get("timestamp", ""))),
+                    }
                   )
 
-                  command = _encoded_ps_single(emp_u, tag, pi_server)
-                  if Logger is not None and logger is not None:
-                    Logger.write_log().log_all(
-                      "info", f"[PI] comando {command}", logger_console, logger
-                    )
-                  stdin, stdout, stderr = client_his.exec_command(command)
-                  output = stdout.read().decode("utf-8", "ignore")
-                  err_output = stderr.read().decode("utf-8", "ignore").strip()
-                  if err_output:
-                    console_write(f"[PI] {his_host} STDERR: {err_output}", "warn")
-
-                  marker = "__PI_JSON__:"
-                  idx = output.find(marker)
-                  if idx == -1:
-                    last_error = err_output or output.strip() or "respuesta inesperada"
-                    console_write(
-                      f"[PI] {his_host}: respuesta inesperada -> {last_error}", "warn"
-                    )
-                    _record(emp_u, f"{tag}: {his_host} respuesta inesperada", None)
-                    continue
-
-                  json_text = output[idx + len(marker) :].strip()
-                  raw_rows = json.loads(json_text) if json_text else []
-
-                  normalized: List[Dict[str, str]] = []
-                  if isinstance(raw_rows, list):
-                    for item in raw_rows:
-                      if isinstance(item, dict):
-                        normalized.append(
-                          {
-                            "Name": str(item.get("Name", item.get("name", "?"))),
-                            "Value": str(item.get("Value", item.get("value", ""))),
-                            "Timestamp": str(item.get("Timestamp", item.get("timestamp", ""))),
-                          }
-                        )
-                  elif isinstance(raw_rows, dict):
-                    normalized.append(
-                      {
-                        "Name": str(raw_rows.get("Name", raw_rows.get("name", "?"))),
-                        "Value": str(raw_rows.get("Value", raw_rows.get("value", ""))),
-                        "Timestamp": str(raw_rows.get("Timestamp", raw_rows.get("timestamp", ""))),
-                      }
-                    )
-
-                  if normalized:
-                    tag_rows = normalized
-                    aggregated_rows.extend(normalized)
-                    _record(emp_u, f"{tag}: {len(normalized)} valores desde {his_host}", None)
-                    break
-
-                  last_error = "sin valores"
-                  console_write(f"[PI] {his_host}: sin valores para {tag}", "warn")
-                except Exception as exc:
-                  last_error = str(exc)
-                  console_write(f"[PI] Error {sca_host}->{his_host} ({tag}): {exc}", "error")
-                  _record(emp_u, f"{tag}: error {sca_host}->{his_host}: {exc}", None)
-                finally:
-                  if client_his is not None:
-                    client_his.close()
-                  if channel is not None:
-                    channel.close()
-                if tag_rows:
+                if normalized:
+                  tag_rows = normalized
+                  aggregated_rows.extend(normalized)
+                  _record(emp_u, f"{tag}: {len(normalized)} valores desde {his_host}", None)
                   break
-            finally:
-              try:
-                if client_sca is not None:
-                  client_sca.close()
-              except Exception:
-                pass
 
-            if tag_rows:
-              break
+                last_error = "sin valores"
+                console_write(f"[PI] {his_host}: sin valores para {tag}", "warn")
+              except Exception as exc:
+                last_error = str(exc)
+                console_write(f"[PI] Error {sca_host}->{his_host} ({tag}): {exc}", "error")
+                _record(emp_u, f"{tag}: error {sca_host}->{his_host}: {exc}", None)
+              finally:
+                if client_his is not None:
+                  client_his.close()
+                if channel is not None:
+                  channel.close()
+              if tag_rows:
+                break
+          finally:
+            try:
+              if client_sca is not None:
+                client_sca.close()
+            except Exception:
+              pass
 
         if not tag_rows:
           missing_tags.append(tag)

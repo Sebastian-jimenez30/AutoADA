@@ -77,6 +77,14 @@ def ejecutar_hsh_crear(
     return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
 
 
+@router.post("/hsh/crear/pi")
+def consultar_pi_crear():
+    def _pipeline():
+        yield from hsh_controller.crear_tag_pi()
+
+    return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
+
+
 @router.get("/hsh/crear/result")
 def obtener_hsh_crear_result(
     sheet: str | None = Query(None),

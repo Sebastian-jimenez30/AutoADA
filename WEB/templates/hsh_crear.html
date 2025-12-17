@@ -54,6 +54,7 @@
       data-run-url="/hsh/crear/run"
       data-result-url="/hsh/crear/result"
       data-file-download="/hsh/crear/result/download"
+      data-pi-url="/hsh/crear/pi"
     >
       <input type="hidden" id="aplicar" name="aplicar" value="">
       <div class="form-layout">
@@ -70,7 +71,7 @@
           </div>
 
           <p class="form-help-text">
-            <strong>Nota:</strong> el proceso se ejecutará para la empresa principal y respaldo detectadas en este equipo. Usa <strong>Verificar</strong> para sólo validar, o <strong>Ejecutar</strong> para aplicar en HSH/SCADA/PI.
+            <strong>Nota:</strong> el proceso se ejecutará para la empresa principal y respaldo detectadas en este equipo. Usa <strong>Verificar</strong> para sólo validar, o <strong>Ejecutar</strong> para aplicar en HSH/SCADA. La consulta PI se ejecuta aparte con <strong>Consultar PI</strong>.
           </p>
         </div>
 
@@ -80,6 +81,9 @@
           </button>
           <button type="button" class="btn btn-primary" id="buscarKeyBtn">
             Ejecutar
+          </button>
+          <button type="button" class="btn btn-primary btn-outline" id="consultarPiBtn" data-enable-on-success="1" disabled>
+            Consultar PI
           </button>
         </div>
       </div>

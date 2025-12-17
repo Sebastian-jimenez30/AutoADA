@@ -39,11 +39,16 @@ document.addEventListener("DOMContentLoaded", () => {
   let updateFormData = null;
   const piUrl = form.dataset.piUrl || "";
   const confirmUrl = form.dataset.confirmUrl || "";
+  const piEnableOnSuccess = Boolean(piBtn && piBtn.dataset.enableOnSuccess === "1");
   const confirmModal = document.getElementById("confirmModal");
   const confirmList = document.getElementById("confirmList");
   const confirmAccept = document.getElementById("confirmAccept");
   const confirmCancel = document.getElementById("confirmCancel");
   const origin = window.location.origin;
+
+  if (piBtn && piEnableOnSuccess) {
+    piBtn.disabled = true;
+  }
 
   const buildResultUrl = (sheetValue) => {
     try {
@@ -867,6 +872,9 @@ const hideConfirmModal = () => {
     if (result) {
       showResult(result.status, result.message);
       setStatus(result.status === "SUCCESS" ? "Completado" : "Error", result.status);
+      if (piBtn && piEnableOnSuccess) {
+        piBtn.disabled = !Boolean(result.pi_ready);
+      }
       if (result.status === "SUCCESS") {
         resultsNeedsRefresh = true;
         sheetCache.clear();
@@ -879,6 +887,9 @@ const hideConfirmModal = () => {
         "El proceso finalizó sin entregar un resultado final.",
       );
       setStatus("Error", "ERROR");
+      if (piBtn && piEnableOnSuccess) {
+        piBtn.disabled = true;
+      }
       finishSummaryRun("error");
     }
   };
@@ -932,6 +943,9 @@ const hideConfirmModal = () => {
 
   const launchRun = async () => {
     hideConfirmModal();
+    if (piBtn && piEnableOnSuccess) {
+      piBtn.disabled = true;
+    }
     activatePanel("summary");
     scrollToOutputs();
     resetResultsView();

@@ -1,43 +1,48 @@
 {% extends "base.html" %}
+{% import "components/summary_panel.html" as summary_components %}
+{% import "components/console.html" as components %}
 
 {% block content %}
 <section class="content-panel">
   <h2 class="panel-title">¡Bienvenido a AutoADA!</h2>
   <p class="panel-subtitle">
-    Esta aplicación opera con información proveniente de servidores externos.
-    Sincronizamos los datos de SCADA, HSH y ODS para que puedas realizar tus tareas con la mejor
-    información disponible.
+    Observa de un vistazo la frescura de los datos locales (SCADA/HSH/ODSTXT) y ejecuta la actualización global.
   </p>
 
-  <div class="status-grid">
-    <article class="status-card">
-      <span>SCADA</span>
-      <strong>Sin datos locales</strong>
-      <p>Ejecuta una actualización para traer la última captura del servidor SCADA correspondiente.</p>
-    </article>
-    <article class="status-card">
-      <span>HSH</span>
-      <strong>Sin datos locales</strong>
-      <p>Importa las colecciones requeridas del Historial de Señales para habilitar las validaciones.</p>
-    </article>
-    <article class="status-card">
-      <span>ODS TXT</span>
-      <strong>Sin datos locales</strong>
-      <p>Descarga los archivos ODS necesarios antes de ejecutar conversiones o reportes especializados.</p>
-    </article>
+  <div class="status-grid" id="statusGrid">
+    <!-- Se rellena vía JS -->
   </div>
 
-  <div class="btn-group">
-    <a href="/importar" class="btn btn-primary">Actualizar datos</a>
-    <button type="button" class="btn btn-secondary">Refrescar estado</button>
+  <div class="btn-group" style="margin-top:16px;">
+    <button type="button" class="btn btn-primary" id="btnActualizar">Actualizar datos</button>
+    <button type="button" class="btn btn-secondary" id="btnRefrescar">Refrescar estado</button>
   </div>
 
-  <div class="empty-state" style="margin-top: 40px;">
-    <strong>Recuerda</strong>
-    <p>
-      Los procesos de importación pueden tardar varios minutos dependiendo de la conectividad.
-      Puedes continuar trabajando en otras tareas mientras se ejecutan.
-    </p>
-  </div>
+  <section class="buscarkey-output card" style="margin-top: 28px;">
+    <div class="output-tabs" role="tablist">
+      <button type="button" class="output-tab is-active" data-target="summary" role="tab" aria-selected="true">
+        Resumen
+      </button>
+      <button type="button" class="output-tab" data-target="console" role="tab" aria-selected="false">
+        Consola
+      </button>
+    </div>
+    <div class="output-panels">
+      <div class="output-panel is-active" data-panel="summary">
+        {{ summary_components.summary_panel() }}
+      </div>
+      <div class="output-panel" data-panel="console">
+        {{ components.process_console(
+          title="Consola del proceso",
+          status_id="logStatus",
+          output_id="logOutput",
+          result_id="resultMessage",
+          wrapper_class="buscarkey-console"
+        ) }}
+      </div>
+    </div>
+  </section>
 </section>
+
+<script src="{{ url_for('static', path='js/menu.js') }}"></script>
 {% endblock %}
