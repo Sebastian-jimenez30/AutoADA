@@ -6,6 +6,7 @@ from typing import Any, Generator
 
 from utils.cli import build_cmd
 from utils.last_update import last_update_text
+from services.vault_service import VaultService
 from services.server_resolver import ServerResolver
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,6 +73,15 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
     empresas = get_empresas()
     dominio = DEFAULT_DOMINIO
 
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield _result_line(
+            "ERROR",
+            f"No fue posible construir el entorno desde el vault ({exc}). Inicia sesión nuevamente.",
+        )
+        return
+
     def _summary(msg: str, variant: str = "info"):
         line = _summary_line(msg, variant)
         if line:
@@ -91,7 +101,7 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
 
         yield from _summary(f"{empresa}: importando SCADA/HSH/ODS")
         cmd_import = build_cmd("scripts.importar_all", servidor, empresa, "sca,hsh,ods", "--dominio", dominio)
-        rc_import = yield from _run_subprocess(cmd_import, f"IMPORT-{empresa}")
+        rc_import = yield from _run_subprocess(cmd_import, f"IMPORT-{empresa}", env=env)
         if rc_import != 0:
             yield _result_line("ERROR", f"{empresa}: importar_all termino con rc={rc_import}")
             continue
@@ -104,7 +114,7 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
                 args.extend(["--dominio", dominio])
             cmd_conv = build_cmd(*args)
             yield from _summary(f"{empresa}: convirtiendo {comp.upper()}")
-            rc_conv = yield from _run_subprocess(cmd_conv, tag)
+            rc_conv = yield from _run_subprocess(cmd_conv, tag, env=env)
             if rc_conv != 0:
                 yield _result_line("ERROR", f"{empresa}: convertir {comp} termino con rc={rc_conv}")
                 break
@@ -114,11 +124,19 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
     yield _result_line("SUCCESS", "Actualizacion global finalizada")
 
 
-def _run_subprocess(cmd: list[str], label: str) -> Generator[str, None, int]:
+def _run_subprocess(
+    cmd: list[str],
+    label: str,
+    *,
+    env: dict[str, str] | None = None,
+) -> Generator[str, None, int]:
     import subprocess
 
     yield f"\n--- {label} ---\n"
     yield f"$ {' '.join(cmd)}\n"
+    proc_env = (env or os.environ).copy()
+    proc_env.setdefault("PYTHONUNBUFFERED", "1")
+    proc_env.setdefault("PYTHONIOENCODING", "utf-8")
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -126,6 +144,7 @@ def _run_subprocess(cmd: list[str], label: str) -> Generator[str, None, int]:
         text=True,
         bufsize=1,
         cwd=AUTOADA_DIR,
+        env=proc_env,
     )
     rc: int | None = None
     try:
