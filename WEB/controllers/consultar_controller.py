@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import sys
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Generator, List, Optional
 from urllib.parse import quote
@@ -35,6 +36,40 @@ class ConsultarResult:
 
 last_consultar_rtu_result: Optional[ConsultarResult] = None
 last_empresas_cache: Optional[list[str]] = None
+
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC = None
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def request_stop() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 def _summary_line(message: str, variant: str = "info") -> str:
@@ -79,6 +114,16 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str], cwd:
     try:
         assert proc.stdout is not None
         for raw in proc.stdout:
+            if _should_stop():
+                try:
+                    proc.terminate()
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                yield f"[{label}] Proceso detenido por el usuario.\n"
+                break
             line = raw.rstrip("\r\n")
             if line:
                 yield f"[{label}] {line}\n"
@@ -88,6 +133,7 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str], cwd:
                 proc.stdout.close()
         except Exception:
             pass
+        _set_current_proc(None)
     rc = proc.wait()
     yield f"[{label}] Código de salida: {rc}\n"
     return rc
@@ -230,6 +276,7 @@ def consultar_rtu_pipeline(empresa: str, selected_rtus: list[str], dominio: str 
     """Ejecuta scripts.consultar_rtu con la lista seleccionada."""
     global last_consultar_rtu_result
     last_consultar_rtu_result = None
+    reset_stop_flag()
     empresa = (empresa or "").strip().upper()
     if not empresa:
         yield _result_line({"status": "ERROR", "message": "Debes seleccionar una empresa."})

@@ -11,9 +11,14 @@
   const summaryStatus = document.getElementById("summaryStatus");
   const summaryLoader = document.getElementById("summaryLoader");
   const summaryEmpty = document.getElementById("summaryEmpty");
+  const summaryPanel = document.getElementById("summaryPanel");
+  const stopBtn = document.getElementById("consoleStopBtn");
+  const downloadBtn = document.getElementById("consoleDownloadBtn");
 
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
+  let abortController = null;
+  let logBuffer = "";
 
   const activatePanel = (target) => {
     tabs.forEach((tab) => {
@@ -53,6 +58,7 @@
     if (summaryStatus) summaryStatus.textContent = "";
     if (summaryEmpty) summaryEmpty.hidden = false;
     if (summaryLoader) summaryLoader.hidden = true;
+    if (summaryPanel) summaryPanel.classList.remove("has-messages");
   };
 
   const appendSummaryMessage = (message, variant = "info") => {
@@ -76,6 +82,7 @@
     }
     summaryStatus.textContent = clean;
     if (summaryEmpty) summaryEmpty.hidden = true;
+    if (summaryPanel) summaryPanel.classList.add("has-messages");
   };
 
   const setSummaryLoader = (visible) => {
@@ -86,6 +93,18 @@
     if (logOutput) logOutput.textContent = "";
     if (statusBadge) statusBadge.dataset.status = "info";
     if (resultBox) resultBox.textContent = "";
+    logBuffer = "";
+    if (downloadBtn) downloadBtn.disabled = true;
+  };
+
+  const appendLog = (text) => {
+    if (!text) return;
+    logBuffer += text;
+    if (logOutput) {
+      logOutput.textContent += text;
+      logOutput.scrollTop = logOutput.scrollHeight;
+    }
+    if (downloadBtn) downloadBtn.disabled = !logBuffer.trim();
   };
 
   const renderStatus = (data) => {
@@ -162,10 +181,7 @@
           const [text, variant] = cleaned.substring("SUMMARY::".length).split("|");
           appendSummaryMessage(text, variant || "info");
         } else {
-          if (logOutput) {
-            logOutput.textContent += `${cleaned}\n`;
-            logOutput.scrollTop = logOutput.scrollHeight;
-          }
+          appendLog(`${cleaned}\n`);
         }
       }
     }
@@ -175,6 +191,7 @@
   const runActualizar = async () => {
     if (btnActualizar) btnActualizar.disabled = true;
     if (btnRefrescar) btnRefrescar.disabled = true;
+    if (stopBtn) stopBtn.disabled = false;
     resetConsole();
     resetSummary();
     setSummaryLoader(true);
@@ -184,7 +201,8 @@
     showResult("INFO", "Actualizando datos...");
 
     try {
-      const resp = await fetch("/menu/actualizar", { method: "POST" });
+      abortController = new AbortController();
+      const resp = await fetch("/menu/actualizar", { method: "POST", signal: abortController.signal });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const result = await handleStream(resp);
       if (result && result.message) {
@@ -193,12 +211,20 @@
       }
       await fetchStatus();
     } catch (err) {
-      appendSummaryMessage(`Error: ${err}`, "error");
-      showResult("ERROR", String(err));
+      const isAbort = err && err.name === "AbortError";
+      if (isAbort) {
+        appendSummaryMessage("Ejecución detenida por el usuario.", "warning");
+        showResult("ERROR", "Proceso detenido.");
+      } else {
+        appendSummaryMessage(`Error: ${err}`, "error");
+        showResult("ERROR", String(err));
+      }
     } finally {
       setSummaryLoader(false);
       if (btnActualizar) btnActualizar.disabled = false;
       if (btnRefrescar) btnRefrescar.disabled = false;
+      if (stopBtn) stopBtn.disabled = true;
+      abortController = null;
     }
   };
 
@@ -220,6 +246,44 @@
       activatePanel(tab.dataset.target);
     });
   });
+
+  const stopRun = async () => {
+    if (stopBtn) stopBtn.disabled = true;
+    try {
+      if (abortController) {
+        abortController.abort();
+      }
+      await fetch("/menu/stop", { method: "POST" });
+      appendSummaryMessage("Se solicitó detener el proceso.", "warning");
+      setStatus("Detenido", "ERROR");
+    } catch (err) {
+      appendSummaryMessage(`Error al detener: ${err}`, "error");
+    }
+  };
+
+  if (stopBtn) {
+    stopBtn.disabled = true;
+    stopBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      stopRun();
+    });
+  }
+
+  if (downloadBtn) {
+    downloadBtn.disabled = true;
+    downloadBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const blob = new Blob([logBuffer || ""], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "consola_menu.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
 
   fetchStatus();
 });

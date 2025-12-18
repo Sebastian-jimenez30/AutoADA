@@ -49,6 +49,7 @@
       data-run-url="/pruebas/itcosas-v2/run"
       data-result-url="/pruebas/itcosas-v2/result"
       data-file-download="/pruebas/itcosas-v2/result/download"
+      data-stop-url="/pruebas/stop"
     >
       <div class="form-layout">
         <div class="form-left">
@@ -119,7 +120,10 @@
           status_id="logStatus",
           output_id="logOutput",
           result_id="resultMessage",
-          wrapper_class="buscarkey-console"
+          wrapper_class="buscarkey-console",
+          show_controls=True,
+          stop_id="consoleStopBtn",
+          download_id="consoleDownloadBtn"
         ) }}
       </div>
 

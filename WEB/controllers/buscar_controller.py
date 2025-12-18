@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import threading
 from typing import Any, Generator, Iterable, Sequence, Tuple
 
 from openpyxl import load_workbook
@@ -21,6 +22,41 @@ OUT_ROOT = os.path.join(AUTOADA_DIR, "out")
 RESULT_DIR = os.path.join(OUT_ROOT, "Find_key")
 RESULT_FILE = os.path.join(RESULT_DIR, "Find_Key.xlsx")
 SUMMARY_VARIANTS = {"info", "success", "warning", "error"}
+
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC: subprocess.Popen | None = None
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc: subprocess.Popen | None) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def request_stop() -> None:
+    """Marca el stop y termina el proceso en curso si sigue vivo."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 def get_empresas() -> Iterable[str]:
@@ -63,10 +99,21 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str]) -> G
         cwd=AUTOADA_DIR,
         env=env,
     )
+    _set_current_proc(process)
 
     try:
         assert process.stdout is not None
         for raw_line in process.stdout:
+            if _should_stop():
+                try:
+                    process.terminate()
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                yield f"[{label}] Proceso detenido por el usuario.\n"
+                break
             line = raw_line.rstrip("\r\n")
             if not line:
                 continue
@@ -82,6 +129,7 @@ def _run_subprocess_stream(cmd: list[str], label: str, env: dict[str, str]) -> G
         except Exception:
             pass
 
+    _set_current_proc(None)
     rc = process.wait()
     yield f"[{label}] Código de salida: {rc}\n"
     return rc
@@ -103,6 +151,7 @@ def buscar_key_pipeline(
     keys: str,
     forzar_actualizacion: bool,
 ) -> Generator[str, None, None]:
+    reset_stop_flag()
     empresa = (empresa or "").strip().upper()
     dominio = (dominio or "").strip().upper()
     yield f"Iniciando búsqueda de keys para empresa={empresa} dominio={dominio}\n"
@@ -180,6 +229,9 @@ def buscar_key_pipeline(
         if line:
             yield line
         rc = yield from _run_subprocess_stream(cmd, "BUSCAR", env)
+        if _should_stop():
+            yield _result_line("ERROR", "Proceso detenido por el usuario.")
+            return
         if rc == 0:
             output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
             msg = (
@@ -388,6 +440,7 @@ def buscar_keys_pipeline(
     archivo_nombre: str | None,
     forzar_actualizacion: bool,
 ) -> Generator[str, None, None]:
+    reset_stop_flag()
     empresa = (empresa or "").strip().upper()
     dominio = (dominio or "").strip().upper()
     archivo_nombre = archivo_nombre or os.path.basename(archivo_path)
@@ -516,6 +569,9 @@ def buscar_keys_pipeline(
     }
 
     for label, cmd in steps:
+        if _should_stop():
+            yield _result_line("ERROR", "Proceso detenido por el usuario.")
+            return
         friendly = step_descriptions.get(label, label.replace("-", " ").title())
         line = _summary(f"{summary_prefix}: {friendly} iniciada")
         if line:
@@ -533,13 +589,16 @@ def buscar_keys_pipeline(
 
     line = _summary(f"{summary_prefix}: datos sincronizados correctamente", "success")
     if line:
-        yield line
+            yield line
 
     cmd_buscar = build_cmd("scripts.buscar_keys", empresa, archivo_path, "--dominio", dominio)
     line = _summary(f"{summary_prefix}: búsqueda desde archivo en curso ({file_label})")
     if line:
         yield line
     rc_buscar = yield from _run_subprocess_stream(cmd_buscar, "BUSCAR-ARCHIVO", env)
+    if _should_stop():
+        yield _result_line("ERROR", "Proceso detenido por el usuario.")
+        return
     if rc_buscar == 0:
         output_file = os.path.join(OUT_ROOT, "Find_key", "Find_Key.xlsx")
         msg = (

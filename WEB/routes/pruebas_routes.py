@@ -213,3 +213,9 @@ def descargar_pruebas_itcosas_v2_result(path: str):
         filename=resolved.name,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/pruebas/stop")
+def detener_pruebas():
+    pruebas_controller.request_stop()
+    return {"status": "OK", "message": "Proceso detenido a solicitud del usuario."}

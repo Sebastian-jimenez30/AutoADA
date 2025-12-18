@@ -19,7 +19,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const resultEmpty = document.getElementById("resultEmptyState");
   const resultMeta = document.getElementById("resultMeta");
   const sheetTabsContainer = document.getElementById("resultSheetTabs");
-  const downloadBtn = document.getElementById("resultDownloadBtn");
+  const resultDownloadBtn = document.getElementById("resultDownloadBtn");
   const fileListContainer = document.getElementById("resultFileList");
   const resultDetails = document.getElementById("resultDetails");
   const summaryPanel = document.getElementById("summaryPanel");
@@ -28,12 +28,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const summaryLoader = document.getElementById("summaryLoader");
   const summaryEmpty = document.getElementById("summaryEmpty");
   const paramsCards = Array.from(document.querySelectorAll(".params-card"));
+  const stopBtn = document.getElementById("consoleStopBtn");
+  const logDownloadBtn = document.getElementById("consoleDownloadBtn");
 
   const runUrl =
     form.dataset.runUrl || form.getAttribute("action") || "/buscar/key/run";
   const resultBaseUrl =
     form.dataset.resultUrl || "/buscar/key/result/data";
   const fileDownloadBase = form.dataset.fileDownload || "";
+  const stopUrl = form.dataset.stopUrl || "";
   const actualizarInput = document.getElementById("actualizar");
   const actualizarBtn = document.getElementById("actualizarBtn");
   let updateFormData = null;
@@ -96,6 +99,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const SUMMARY_VARIANTS = new Set(["info", "success", "warning", "error"]);
   const MAX_SUMMARY_ITEMS = 40;
   let runApply = false;
+  let logBuffer = "";
+  let abortController = null;
 
   const scrollToOutputs = () => {
     const container =
@@ -145,9 +150,9 @@ document.addEventListener("DOMContentLoaded", () => {
       sheetTabsContainer.innerHTML = "";
       sheetTabsContainer.classList.remove("has-tabs");
     }
-    if (downloadBtn) {
-      downloadBtn.disabled = true;
-      downloadBtn.dataset.href = "";
+    if (resultDownloadBtn) {
+      resultDownloadBtn.disabled = true;
+      resultDownloadBtn.dataset.href = "";
     }
     if (fileListContainer) {
       fileListContainer.innerHTML = "";
@@ -479,10 +484,10 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     }
 
-    if (downloadBtn) {
+    if (resultDownloadBtn) {
       const url = data?.download_url || "";
-      downloadBtn.dataset.href = url;
-      downloadBtn.disabled = !url;
+      resultDownloadBtn.dataset.href = url;
+      resultDownloadBtn.disabled = !url;
     }
 
     renderFileList(files);
@@ -525,9 +530,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (resultMeta) {
       resultMeta.textContent = "";
     }
-    if (downloadBtn) {
-      downloadBtn.disabled = true;
-      downloadBtn.dataset.href = "";
+    if (resultDownloadBtn) {
+      resultDownloadBtn.disabled = true;
+      resultDownloadBtn.dataset.href = "";
     }
     if (fileListContainer) {
       fileListContainer.innerHTML = "";
@@ -588,9 +593,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  if (downloadBtn) {
-    downloadBtn.addEventListener("click", () => {
-      const url = downloadBtn.dataset.href;
+  if (resultDownloadBtn) {
+    resultDownloadBtn.addEventListener("click", () => {
+      const url = resultDownloadBtn.dataset.href;
       if (url) {
         window.location.href = url;
       }
@@ -630,9 +635,15 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const appendLog = (text) => {
-    if (!logOutput) return;
-    logOutput.textContent += text;
-    logOutput.scrollTop = logOutput.scrollHeight;
+    if (!text) return;
+    logBuffer += text;
+    if (logOutput) {
+      logOutput.textContent += text;
+      logOutput.scrollTop = logOutput.scrollHeight;
+    }
+    if (logDownloadBtn) {
+      logDownloadBtn.disabled = !logBuffer.trim();
+    }
   };
 
 
@@ -834,8 +845,12 @@ const hideConfirmModal = () => {
 
   const ejecutarBusqueda = async () => {
     resetResult();
+    logBuffer = "";
     if (logOutput) {
       logOutput.textContent = "";
+    }
+    if (logDownloadBtn) {
+      logDownloadBtn.disabled = true;
     }
 
     const formData = updateFormData || new FormData(form);
@@ -843,11 +858,21 @@ const hideConfirmModal = () => {
 
     let response;
     try {
+      abortController = new AbortController();
       response = await fetch(runUrl, {
         method: "POST",
         body: formData,
+        signal: abortController.signal,
       });
     } catch (error) {
+      const isAbort = error && error.name === "AbortError";
+      if (isAbort) {
+        appendLog("[CLIENT] Ejecución cancelada por el usuario.\n");
+        showResult("ERROR", "Proceso detenido.");
+        setStatus("Detenido", "ERROR");
+        finishSummaryRun("error");
+        return;
+      }
       appendLog(`[CLIENT] Error de red: ${error}\n`);
       showResult("ERROR", "No fue posible conectar con el servidor.");
       setStatus("Error", "ERROR");
@@ -892,6 +917,7 @@ const hideConfirmModal = () => {
       }
       finishSummaryRun("error");
     }
+    abortController = null;
   };
 
   const setParamsVisibility = () => {
@@ -946,12 +972,14 @@ const hideConfirmModal = () => {
     if (piBtn && piEnableOnSuccess) {
       piBtn.disabled = true;
     }
+    if (stopBtn) stopBtn.disabled = false;
     activatePanel("summary");
     scrollToOutputs();
     resetResultsView();
     setStatus("Ejecutando...");
     startSummaryRun();
     await ejecutarBusqueda();
+    if (stopBtn) stopBtn.disabled = true;
   };
 
   if (verificarBtn) {
@@ -1039,6 +1067,46 @@ const hideConfirmModal = () => {
       runApply = !!(aplicarInput && aplicarInput.value);
       await launchRun();
       setParamsVisibility(false);
+    });
+  }
+
+  const stopRun = async () => {
+    if (stopBtn) stopBtn.disabled = true;
+    try {
+      if (abortController) {
+        abortController.abort();
+      }
+      if (stopUrl) {
+        await fetch(stopUrl, { method: "POST" });
+      }
+      appendSummaryMessage("Se solicitó detener el proceso.", "warning");
+      setStatus("Detenido", "ERROR");
+    } catch (err) {
+      appendSummaryMessage(`Error al detener: ${err}`, "error");
+    }
+  };
+
+  if (stopBtn) {
+    stopBtn.disabled = true;
+    stopBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      stopRun();
+    });
+  }
+
+  if (logDownloadBtn) {
+    logDownloadBtn.disabled = true;
+    logDownloadBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const blob = new Blob([logBuffer || ""], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "consola.txt";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     });
   }
 });

@@ -54,6 +54,8 @@
       data-run-url="/hsh/eliminar/run"
       data-result-url="/hsh/eliminar/result"
       data-file-download="/hsh/eliminar/result/download"
+      data-confirm-url="/hsh/eliminar/confirm"
+      data-stop-url="/hsh/stop"
     >
       <input type="hidden" id="aplicar" name="aplicar" value="">
       <div class="form-layout">
@@ -108,7 +110,10 @@
           status_id="logStatus",
           output_id="logOutput",
           result_id="resultMessage",
-          wrapper_class="buscarkey-console"
+          wrapper_class="buscarkey-console",
+          show_controls=True,
+          stop_id="consoleStopBtn",
+          download_id="consoleDownloadBtn"
         ) }}
       </div>
       <div class="output-panel" data-panel="results">

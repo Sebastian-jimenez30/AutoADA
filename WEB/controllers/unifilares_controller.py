@@ -5,6 +5,7 @@ import os
 import socket
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generator, Optional
@@ -42,6 +43,41 @@ class UnifilaresResult:
 
 last_unifilares_result: Optional[UnifilaresResult] = None
 
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC = None
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def request_stop() -> None:
+    """Marca stop y termina el proceso activo si sigue vivo."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
 
 def _summary_line(message: str, variant: str = "info") -> str | None:
     clean = (message or "").strip()
@@ -76,10 +112,21 @@ def _run_subprocess_stream(
         cwd=cwd,
         env=env,
     )
+    _set_current_proc(proc)
 
     try:
         assert proc.stdout is not None
         for raw in proc.stdout:
+            if _should_stop():
+                try:
+                    proc.terminate()
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                yield f"[{label}] Proceso detenido por el usuario.\n"
+                break
             line = raw.rstrip("\r\n")
             if line:
                 yield f"[{label}] {line}\n"
@@ -89,6 +136,7 @@ def _run_subprocess_stream(
                 proc.stdout.close()
         except Exception:
             pass
+        _set_current_proc(None)
 
     rc = proc.wait()
     yield f"[{label}] Código de salida: {rc}\n"
@@ -125,6 +173,7 @@ def validar_unifilares_pipeline(
     """Flujo web para validar unifilares (equivalente al handler desktop)."""
     global last_unifilares_result
     last_unifilares_result = None
+    reset_stop_flag()
     extra_messages: list[str] = []
 
     def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):

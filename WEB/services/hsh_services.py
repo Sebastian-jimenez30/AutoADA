@@ -319,6 +319,48 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
       encoded = base64.b64encode(ps_script.encode("utf-16-le")).decode("utf-8")
       return f"powershell -NoLogo -NonInteractive -EncodedCommand {encoded}"
 
+    def _encoded_ps_batch(emp_u: str, tags: list[str], pi_server: str) -> str:
+      tags_json = json.dumps(tags)
+      template = """
+$ErrorActionPreference = 'Stop'
+Add-Type -Path "C:\\Program Files (x86)\\PIPC\\AF\\PublicAssemblies\\4.0\\OSIsoft.AFSDK.dll"
+$piServers = [OSIsoft.AF.PI.PIServers]::GetPIServers()
+$piServer = $piServers['{pi_server}']
+$securePassword = ConvertTo-SecureString "{pi_pass_ps}" -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential("{pi_user_ps}", $securePassword)
+$piServer.Connect($credential)
+$targets = ConvertFrom-Json @'
+{tags_json}
+'@
+$result = @{{}}
+$allPoints = [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*SCADA*", $true)
+foreach ($target in $targets) {{
+    $hits = @()
+    foreach ($piPoint in $allPoints) {{
+        if ($piPoint.Name -like "*${{target}}*") {{
+            $cv = $piPoint.CurrentValue()
+            $hits += [PSCustomObject]@{{
+                Name = $piPoint.Name
+                Value = $cv.Value.ToString()
+                Timestamp = $cv.Timestamp.ToString()
+            }}
+            break
+        }}
+    }}
+    $result[$target] = $hits
+}}
+"__PI_JSON__:" + ($result | ConvertTo-Json -Depth 4 -Compress)
+"""
+      ps_script = template.format(
+        pi_server=pi_server,
+        pi_pass_ps=pi_pass_ps,
+        pi_user_ps=pi_user_ps,
+        tags_json=tags_json,
+        emp_u=emp_u,
+      )
+      encoded = base64.b64encode(ps_script.encode("utf-16-le")).decode("utf-8")
+      return f"powershell -NoLogo -NonInteractive -EncodedCommand {encoded}"
+
     def _record(emp: str, message: str, ok: Optional[bool]) -> None:
       if record_status:
         record_status(emp, "pi", ok, message)
@@ -454,114 +496,124 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
       aggregated_rows: List[Dict[str, str]] = []
       missing_tags: List[str] = []
 
-      for tag in tag_list:
-        tag_rows: Optional[List[Dict[str, str]]] = None
-        last_error: Optional[str] = None
-        attempts = 0
+      tag_rows_map: Dict[str, Optional[List[Dict[str, str]]]] = {t: None for t in tag_list}
+      tag_last_error: Dict[str, Optional[str]] = {t: None for t in tag_list}
+      attempts_map: Dict[str, int] = {t: 0 for t in tag_list}
 
-        for prefix in prefixes:
-          if tag_rows or attempts >= pi_max_attempts_per_tag:
-            break
+      for prefix in prefixes:
+        remaining = [t for t in tag_list if tag_rows_map[t] is None and attempts_map[t] < pi_max_attempts_per_tag]
+        if not remaining:
+          break
 
-          sca_host = _resolve_online_scada(prefix)
-          if not sca_host:
-            last_error = "no se detectó SCADA ONLINE"
-            console_write(
-              f"[PI] {emp_u}: no se detectó SCADA ONLINE para prefijo {prefix}", "warn"
-            )
-            _record(emp_u, f"{tag}: prefijo {prefix} sin SCADA ONLINE", None)
-            continue
+        sca_host = _resolve_online_scada(prefix)
+        if not sca_host:
+          for t in remaining:
+            tag_last_error[t] = "no se detectó SCADA ONLINE"
+            _record(emp_u, f"{t}: prefijo {prefix} sin SCADA ONLINE", None)
+          console_write(f"[PI] {emp_u}: prefijo {prefix} sin SCADA ONLINE", "warn")
+          continue
 
-          console_write(f"[PI] Conectando a SCADA {sca_host} para {tag} ...", "info")
-          client_sca = None
+        console_write(f"[PI] Conectando a SCADA {sca_host} ...", "info")
+        client_sca = None
+        try:
+          client_sca = sshserver(sca_host, logger, logger_console)
+        except Exception as exc:
+          for t in remaining:
+            tag_last_error[t] = str(exc)
+            _record(emp_u, f"{t}: error conectando a {sca_host}: {exc}", None)
+          console_write(f"[PI] Error conectando a SCADA {sca_host}: {exc}", "error")
+          continue
+
+        if client_sca is None:
+          for t in remaining:
+            tag_last_error[t] = "sshserver devolvió None"
+            _record(emp_u, f"{t}: {sca_host} sshserver devolvió None", None)
+          console_write(f"[PI] {sca_host}: sshserver devolvió None", "error")
+          continue
+
+        transport = client_sca.get_transport()
+        if transport is None or not transport.is_active():
+          for t in remaining:
+            tag_last_error[t] = "transporte SSH inactivo"
+            _record(emp_u, f"{t}: {sca_host} transporte SSH inactivo", None)
+          console_write(f"[PI] {sca_host}: transporte SSH inactivo", "error")
           try:
-            client_sca = sshserver(sca_host, logger, logger_console)
-          except Exception as exc:
-            last_error = str(exc)
-            console_write(f"[PI] Error conectando a SCADA {sca_host}: {exc}", "error")
-            _record(emp_u, f"{tag}: error conectando a {sca_host}: {exc}", None)
-            continue
+            client_sca.close()
+          except Exception:
+            pass
+          continue
 
-          if client_sca is None:
-            last_error = "sshserver devolvió None"
-            console_write(f"[PI] {sca_host}: sshserver devolvió None", "error")
-            _record(emp_u, f"{tag}: {sca_host} sshserver devolvió None", None)
-            continue
+        try:
+          for his_suffix in ("his01", "his02"):
+            tags_pending = [
+              t for t in tag_list if tag_rows_map[t] is None and attempts_map[t] < pi_max_attempts_per_tag
+            ]
+            if not tags_pending:
+              break
 
-          transport = client_sca.get_transport()
-          if transport is None or not transport.is_active():
-            last_error = "transporte SSH inactivo"
-            console_write(f"[PI] {sca_host}: transporte SSH inactivo", "error")
-            _record(emp_u, f"{tag}: {sca_host} transporte SSH inactivo", None)
+            his_host = f"{prefix}{his_suffix}"
+            channel = None
+            client_his = None
             try:
-              client_sca.close()
-            except Exception:
-              pass
-            continue
+              console_write(
+                f"[PI]   Tunel a {his_host} (tags={len(tags_pending)}, intento {attempts_map[tags_pending[0]] + 1}/{pi_max_attempts_per_tag}) ...",
+                "info",
+              )
+              channel = transport.open_channel(
+                "direct-tcpip",
+                (his_host, 22),
+                ("127.0.0.1", 0),
+                timeout=pi_tunnel_timeout_s,
+              )
+              client_his = paramiko.SSHClient()
+              client_his.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+              client_his.connect(
+                hostname=his_host,
+                username=pi_user,
+                password=pi_pass,
+                sock=channel,
+                look_for_keys=False,
+                allow_agent=False,
+                timeout=pi_connect_timeout_s,
+                auth_timeout=pi_connect_timeout_s,
+                banner_timeout=pi_connect_timeout_s,
+              )
 
-          try:
-            for his_suffix in ("his01", "his02"):
-              if tag_rows or attempts >= pi_max_attempts_per_tag:
-                break
-              attempts += 1
+              command = _encoded_ps_batch(emp_u, tags_pending, pi_server)
+              if Logger is not None and logger is not None:
+                Logger.write_log().log_all("info", f"[PI] comando {command}", logger_console, logger)
 
-              his_host = f"{prefix}{his_suffix}"
-              channel = None
-              client_his = None
-              try:
-                console_write(
-                  f"[PI]   Tunel a {his_host} para {tag} (intento {attempts}/{pi_max_attempts_per_tag}) ...",
-                  "info",
-                )
-                channel = transport.open_channel(
-                  "direct-tcpip",
-                  (his_host, 22),
-                  ("127.0.0.1", 0),
-                  timeout=pi_tunnel_timeout_s,
-                )
-                client_his = paramiko.SSHClient()
-                client_his.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                client_his.connect(
-                  hostname=his_host,
-                  username=pi_user,
-                  password=pi_pass,
-                  sock=channel,
-                  look_for_keys=False,
-                  allow_agent=False,
-                  timeout=pi_connect_timeout_s,
-                  auth_timeout=pi_connect_timeout_s,
-                  banner_timeout=pi_connect_timeout_s,
-                )
+              output, err_output, timed_out = _exec_command_with_timeout(
+                client_his,
+                command,
+                pi_command_timeout_s,
+              )
+              for t in tags_pending:
+                attempts_map[t] += 1
+              if timed_out:
+                for t in tags_pending:
+                  tag_last_error[t] = f"timeout ({pi_command_timeout_s}s)"
+                  _record(emp_u, f"{t}: {his_host} timeout", None)
+                console_write(f"[PI] {his_host}: timeout consultando tags ({len(tags_pending)})", "warn")
+                continue
 
-                command = _encoded_ps_single(emp_u, tag, pi_server)
-                if Logger is not None and logger is not None:
-                  Logger.write_log().log_all("info", f"[PI] comando {command}", logger_console, logger)
+              if err_output:
+                console_write(f"[PI] {his_host} STDERR: {err_output}", "warn")
 
-                output, err_output, timed_out = _exec_command_with_timeout(
-                  client_his,
-                  command,
-                  pi_command_timeout_s,
-                )
-                if timed_out:
-                  last_error = f"timeout ({pi_command_timeout_s}s)"
-                  console_write(f"[PI] {his_host}: timeout consultando {tag}", "warn")
-                  _record(emp_u, f"{tag}: {his_host} timeout", None)
-                  continue
+              marker = "__PI_JSON__:"
+              idx = output.find(marker)
+              if idx == -1:
+                for t in tags_pending:
+                  tag_last_error[t] = err_output or output.strip() or "respuesta inesperada"
+                  _record(emp_u, f"{t}: {his_host} respuesta inesperada", None)
+                console_write(f"[PI] {his_host}: respuesta inesperada -> {err_output or output.strip()}", "warn")
+                continue
 
-                if err_output:
-                  console_write(f"[PI] {his_host} STDERR: {err_output}", "warn")
+              json_text = output[idx + len(marker) :].strip()
+              raw_obj = json.loads(json_text) if json_text else {}
 
-                marker = "__PI_JSON__:"
-                idx = output.find(marker)
-                if idx == -1:
-                  last_error = err_output or output.strip() or "respuesta inesperada"
-                  console_write(f"[PI] {his_host}: respuesta inesperada -> {last_error}", "warn")
-                  _record(emp_u, f"{tag}: {his_host} respuesta inesperada", None)
-                  continue
-
-                json_text = output[idx + len(marker) :].strip()
-                raw_rows = json.loads(json_text) if json_text else []
-
+              for t in tags_pending:
+                raw_rows = raw_obj.get(t, [])
                 normalized: List[Dict[str, str]] = []
                 if isinstance(raw_rows, list):
                   for item in raw_rows:
@@ -583,40 +635,42 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
                   )
 
                 if normalized:
-                  tag_rows = normalized
+                  tag_rows_map[t] = normalized
                   aggregated_rows.extend(normalized)
-                  _record(emp_u, f"{tag}: {len(normalized)} valores desde {his_host}", None)
-                  break
+                  _record(emp_u, f"{t}: {len(normalized)} valores desde {his_host}", None)
+                  console_write(f"[PI] {his_host}: valores capturados para {t}", "info")
+                else:
+                  tag_last_error[t] = "sin valores"
+                  console_write(f"[PI] {his_host}: sin valores para {t}", "warn")
 
-                last_error = "sin valores"
-                console_write(f"[PI] {his_host}: sin valores para {tag}", "warn")
-              except Exception as exc:
-                last_error = str(exc)
-                console_write(f"[PI] Error {sca_host}->{his_host} ({tag}): {exc}", "error")
-                _record(emp_u, f"{tag}: error {sca_host}->{his_host}: {exc}", None)
-              finally:
-                if client_his is not None:
-                  client_his.close()
-                if channel is not None:
-                  channel.close()
-              if tag_rows:
-                break
-          finally:
-            try:
-              if client_sca is not None:
-                client_sca.close()
-            except Exception:
-              pass
+            except Exception as exc:
+              for t in tags_pending:
+                attempts_map[t] += 1
+                tag_last_error[t] = str(exc)
+                _record(emp_u, f"{t}: error {sca_host}->{his_host}: {exc}", None)
+              console_write(f"[PI] Error {sca_host}->{his_host}: {exc}", "error")
+            finally:
+              if client_his is not None:
+                client_his.close()
+              if channel is not None:
+                channel.close()
+        finally:
+          try:
+            if client_sca is not None:
+              client_sca.close()
+          except Exception:
+            pass
 
-        if not tag_rows:
+      for tag in tag_list:
+        if tag_rows_map[tag] is None:
           missing_tags.append(tag)
           has_failures = True
-          warning = f"{emp_u}:{tag}:{last_error or 'sin datos'}"
+          warning = f"{emp_u}:{tag}:{tag_last_error.get(tag) or 'sin datos'}"
           missing_lines.append(warning)
           console_write(
-            f"[PI] {emp_u}: no se obtuvo informacion para {tag} ({last_error or 'sin datos'})", "warn"
+            f"[PI] {emp_u}: no se obtuvo informacion para {tag} ({tag_last_error.get(tag) or 'sin datos'})", "warn"
           )
-          _record(emp_u, f"{tag}: {last_error or 'sin datos'}", False)
+          _record(emp_u, f"{tag}: {tag_last_error.get(tag) or 'sin datos'}", False)
         else:
           console_write(f"[PI] {emp_u}: valores capturados para {tag}", "info")
 

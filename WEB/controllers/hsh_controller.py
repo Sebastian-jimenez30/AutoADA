@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import socket
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +78,42 @@ class CrearResult:
 last_crear_result: Optional[CrearResult] = None
 
 
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC: subprocess.Popen | None = None
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc: subprocess.Popen | None) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def request_stop() -> None:
+    """Marca stop y termina el proceso activo si sigue vivo."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
 @dataclass
 class EliminarResult:
     status: str
@@ -91,6 +128,8 @@ last_cambiar_state: dict[str, Any] = {}
 last_cambiar_pending: bool = False
 last_cambiar_scada_disable: dict[str, dict[str, set[str]]] = {}
 last_cambiar_scada_enable: dict[str, dict[str, set[str]]] = {}
+last_eliminar_state: dict[str, Any] | None = None
+last_eliminar_pending: bool = False
 
 
 @dataclass
@@ -102,6 +141,41 @@ class ValidarResult:
 
 
 last_validar_result: Optional[ValidarResult] = None
+
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC: subprocess.Popen | None = None
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc: subprocess.Popen | None) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def request_stop() -> None:
+    """Marca stop y termina el proceso activo si sigue vivo."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
 
 
 def _split_tag_name(name: str) -> tuple[str, str]:
@@ -374,10 +448,21 @@ def _run_subprocess_stream(
         cwd=cwd,
         env=env,
     )
+    _set_current_proc(process)
 
     try:
         assert process.stdout is not None
         for raw_line in process.stdout:
+            if _should_stop():
+                try:
+                    process.terminate()
+                except Exception:
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                yield f"[{label}] Proceso detenido por el usuario.\n"
+                break
             line = raw_line.rstrip("\r\n")
             if line:
                 yield f"[{label}] {line}\n"
@@ -387,6 +472,7 @@ def _run_subprocess_stream(
                 process.stdout.close()
         except Exception:
             pass
+        _set_current_proc(None)
 
     rc = process.wait()
     yield f"[{label}] Código de salida: {rc}\n"
@@ -418,6 +504,7 @@ def crear_tags_pipeline(
 ) -> Generator[str, None, None]:
     global last_crear_result
 
+    reset_stop_flag()
     empresa_detected, respaldo_detected = detect_empresas_por_host()
     empresa = empresa_detected
     respaldo = respaldo_detected
@@ -1485,9 +1572,10 @@ def cambiar_key_pipeline(
     archivo_nombre: str | None,
     aplicar: bool,
 ) -> Generator[str, None, None]:
-    """Flujo Cambiar Key para web (validar/aplicar) alineado con la l?gica desktop."""
+    """Flujo Cambiar Key para web (validar/aplicar) alineado con la lógica desktop."""
     global last_cambiar_result, last_cambiar_state, last_cambiar_pending, last_cambiar_scada_disable, last_cambiar_scada_enable
 
+    reset_stop_flag()
     extra_messages: list[str] = []
 
     def _store_result(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -2041,6 +2129,20 @@ def cleanup_cambiar_file():
             pass
 
 
+def is_eliminar_pending() -> bool:
+    return bool(last_eliminar_pending)
+
+
+def cleanup_eliminar_file():
+    global last_eliminar_state
+    path = (last_eliminar_state or {}).get("excel_path")
+    if path and os.path.isfile(path):
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+
+
 def _find_latest_cambiar_report() -> str | None:
     base_dir = Path(AUTOADA_DIR) / "out" / "cambiar_key"
     if not base_dir.exists():
@@ -2352,8 +2454,11 @@ def eliminar_tags_pipeline(
     archivo_nombre: str | None,
     aplicar: bool,
 ) -> Generator[str, None, None]:
-    global last_eliminar_result
+    global last_eliminar_result, last_eliminar_state, last_eliminar_pending
 
+    reset_stop_flag()
+    last_eliminar_pending = False
+    last_eliminar_state = None
     # Detectar empresa/respaldo automáticamente (ignora entradas del formulario)
     empresa_detected, respaldo_detected = detect_empresas_por_host()
     empresa = empresa_detected
@@ -2821,6 +2926,37 @@ def eliminar_tags_pipeline(
 
     extra_messages.extend(resumen)
 
+    if aplicar and not scada_failed and (delete_files or purge_files or delete_keys_by_emp):
+        last_eliminar_state = {
+            "empresa": empresa,
+            "respaldo": respaldo,
+            "excel_path": archivo_path,
+            "servidor_principal": servidor_principal,
+            "servidor_respaldo": servidor_respaldo,
+            "delete_files": delete_files,
+            "purge_files": purge_files,
+            "report_paths": report_paths,
+            "delete_keys_by_emp": {k: sorted(v) for k, v in delete_keys_by_emp.items()},
+        }
+        last_eliminar_pending = True
+        pending_message = "Pendiente confirmación de Delete/Purge en HSH."
+        pending_payload = {
+            "status": "PENDING_CONFIRM",
+            "message": pending_message,
+            "files": files,
+            "confirm_needed": True,
+            "delete_files": delete_files,
+            "purge_files": purge_files,
+            "details": extra_messages,
+        }
+        if report_excel_path:
+            pending_payload["report_path"] = report_excel_path
+        _store_result(pending_payload["status"], pending_payload["message"], files=files, extra=pending_payload)
+        yield from _yield_summary("Pendiente confirmación de Delete/Purge en HSH", "warning")
+        yield "CONFIRM_DELETE::pending\n"
+        yield _result_line(pending_payload)
+        return
+
     final_status = "SUCCESS" if not scada_failed else "ERROR"
     final_message = "Eliminación de tags completada."
     if scada_failed:
@@ -2840,11 +2976,278 @@ def eliminar_tags_pipeline(
     yield _result_line(payload)
 
 
+def confirmar_eliminar_pipeline() -> Generator[str, None, None]:
+    """Confirma que Delete/Purge ya se ejecutó en HSH y revalida limpieza."""
+    global last_eliminar_state, last_eliminar_result, last_eliminar_pending
+
+    state = last_eliminar_state or {}
+    files_collected = sorted(
+        {
+            *(state.get("report_paths") or []),
+            *(state.get("delete_files") or []),
+            *(state.get("purge_files") or []),
+        }
+    )
+
+    yield "Iniciando verificación posterior a Delete/Purge...\n"
+
+    def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
+        global last_eliminar_result
+        last_eliminar_result = EliminarResult(
+            status=status,
+            message=message,
+            files=files or [],
+            extra=extra or {},
+        )
+
+    if not state:
+        payload = {"status": "ERROR", "message": "No hay ejecución pendiente de Eliminar Tag para confirmar.", "files": files_collected}
+        yield _result_line(payload)
+        return
+
+    empresa = state.get("empresa")
+    respaldo = state.get("respaldo")
+    archivo_path = state.get("excel_path")
+    servidor_principal = state.get("servidor_principal")
+    servidor_respaldo = state.get("servidor_respaldo")
+    delete_keys_raw = state.get("delete_keys_by_emp") or {}
+    delete_keys: dict[str, set[str]] = {}
+    for emp, keys in delete_keys_raw.items():
+        emp_u = str(emp or "").strip().upper()
+        if not emp_u:
+            continue
+        delete_keys[emp_u] = {str(k).strip().upper() for k in (keys or []) if str(k).strip()}
+
+    if not empresa or not archivo_path or not os.path.isfile(archivo_path):
+        payload = {"status": "ERROR", "message": "No se encontró el estado pendiente o el archivo de entrada.", "files": files_collected}
+        yield _result_line(payload)
+        return
+
+    try:
+        env = VaultService.build_env()
+    except Exception as exc:
+        yield f"Error obteniendo variables del vault: {exc}\n"
+        payload = {"status": "ERROR", "message": "No se pudo construir el entorno para confirmar.", "files": files_collected}
+        yield _result_line(payload)
+        return
+
+    lookup_statuses: dict[str, dict[str, str]] = {}
+    group_matches: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    lookup_would_delete: dict[str, list[str]] = {}
+    extra_messages: list[str] = []
+
+    def _yield_summary(message: str, variant: str = "info"):
+        line = _summary_line_local(message, variant, extra_messages)
+        if line:
+            yield line
+
+    def _handle_marker(line: str):
+        line = (line or "").strip()
+        if not line:
+            return
+        if line.startswith("LOOKUP_STATUS:"):
+            try:
+                _, payload = line.split("LOOKUP_STATUS:", 1)
+                emp, base, status = payload.split(":", 2)
+                lookup_statuses.setdefault(emp.strip().upper(), {})[base.strip()] = status.strip().upper()
+            except Exception:
+                pass
+        elif line.startswith("GROUP_MATCH:"):
+            try:
+                _, payload = line.split("GROUP_MATCH:", 1)
+                emp, base, raw = payload.split(":", 2)
+                emp_u = emp.strip().upper()
+                try:
+                    details = json.loads(raw) if raw else []
+                except json.JSONDecodeError:
+                    details = []
+                if isinstance(details, list):
+                    group_matches.setdefault(emp_u, {})[base.strip()] = details
+            except Exception:
+                pass
+        elif line.startswith("LOOKUP_WOULD_DELETE:"):
+            try:
+                _, payload = line.split("LOOKUP_WOULD_DELETE:", 1)
+                emp, keys_part = payload.split(":", 1)
+                emp_u = emp.strip().upper()
+                keys = [k.strip() for k in keys_part.split(",") if k.strip()]
+                lookup_would_delete[emp_u] = keys
+            except Exception:
+                pass
+        elif line.startswith("SUMMARY::"):
+            try:
+                payload = line.split("SUMMARY::", 1)[1]
+                if "|" in payload:
+                    msg, var = payload.rsplit("|", 1)
+                    msg_clean = msg.strip()
+                    var_clean = var.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        return f"SUMMARY::{msg_clean}|{var_clean}\n"
+                else:
+                    msg_clean = payload.strip()
+                    if msg_clean:
+                        extra_messages.append(msg_clean)
+                        return f"SUMMARY::{msg_clean}|info\n"
+            except Exception:
+                return None
+        return None
+
+    def _stream_step(label: str, cmd: list[str]) -> int:
+        stream = _run_subprocess_stream(cmd, label, env=env, cwd=AUTOADA_DIR)
+        rc: int | None = None
+        try:
+            while True:
+                chunk = next(stream)
+                raw = chunk
+                if "[" in raw and "]" in raw:
+                    raw = raw.split("]", 1)[1]
+                marker = _handle_marker(raw.strip())
+                if marker:
+                    yield marker
+                yield chunk
+        except StopIteration as stop:
+            rc = stop.value if isinstance(stop.value, int) else 0
+        return rc if rc is not None else 0
+
+    pre_commands: list[tuple[str, list[str]] | None] = [
+        (
+            "IMPORT-PRINCIPAL",
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_confirm", "--dominio", "CC"),
+        ),
+        (
+            "IMPORT-RESPALDO",
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_confirm", "--dominio", "CC"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        ("CONVERT-SCA-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "sca", "--dominio", "CC")),
+        ("CONVERT-HSH-PRINCIPAL", build_cmd("scripts.Convertir_all", empresa, "Validar_HSH", "--only", "hsh")),
+        (
+            "CONVERT-SCA-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "sca", "--dominio", "CC"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+        (
+            "CONVERT-HSH-RESPALDO",
+            build_cmd("scripts.Convertir_all", respaldo, "Validar_HSH", "--only", "hsh"),
+        )
+        if respaldo and servidor_respaldo
+        else None,
+    ]
+
+    for entry in pre_commands:
+        if not entry:
+            continue
+        label, cmd = entry
+        rc_pre = yield from _stream_step(label, cmd)
+        if rc_pre != 0:
+            message = f"Sincronización previa ({label}) falló (rc={rc_pre})."
+            last_eliminar_pending = True
+            _store("ERROR", message, files=files_collected, extra={"details": extra_messages})
+            yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+            return
+
+    cmd_check = build_cmd("scripts.hsh_eliminar_tag", empresa, "--input", archivo_path, "--check-only")
+    if respaldo:
+        cmd_check += ["--respaldo", respaldo]
+    if servidor_principal:
+        cmd_check += ["--server", servidor_principal]
+    if respaldo and servidor_respaldo:
+        cmd_check += ["--server-respaldo", servidor_respaldo]
+
+    rc_check = yield from _stream_step("ELIMINAR-CHECK", cmd_check)
+    if rc_check != 0:
+        message = f"Verificación post Delete/Purge falló (rc={rc_check})."
+        last_eliminar_pending = True
+        _store("ERROR", message, files=files_collected, extra={"details": extra_messages})
+        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+        return
+
+    issues: list[str] = []
+    for emp_u, keys in delete_keys.items():
+        status_map = lookup_statuses.get(emp_u, {})
+        group_map = group_matches.get(emp_u, {})
+        would_delete = lookup_would_delete.get(emp_u, [])
+        for key in keys:
+            base = key.split(".", 1)[0].strip().upper()
+            if not base:
+                continue
+            status_val = (status_map.get(base) or "ABSENT").upper()
+            if status_val != "ABSENT":
+                issues.append(f"{emp_u}: {base} aún presente en lookup_table.")
+            if group_map.get(base):
+                issues.append(f"{emp_u}: {base} aún tiene registros en groups.")
+        if would_delete:
+            issues.append(f"{emp_u}: {len(would_delete)} clave(s) aún existen en lookup_table.")
+
+    if issues:
+        msg = "Aún se detectan claves/bits tras Delete/Purge. Ejecuta nuevamente y confirma."
+        last_eliminar_pending = True
+        payload_pending = {
+            "status": "PENDING_CONFIRM",
+            "message": msg,
+            "files": files_collected,
+            "confirm_needed": True,
+            "delete_files": state.get("delete_files", []),
+            "purge_files": state.get("purge_files", []),
+            "details": extra_messages + issues,
+        }
+        yield from _yield_summary(msg, "warning")
+        yield "CONFIRM_DELETE::pending\n"
+        _store(payload_pending["status"], payload_pending["message"], files=files_collected, extra=payload_pending)
+        yield _result_line(payload_pending)
+        return
+
+    scada_messages: list[str] = []
+    scada_failed = False
+    if delete_keys:
+        inserted_keys_map: dict[str, dict[str, set[str]]] = {}
+        for emp_u, keys in delete_keys.items():
+            base_map: dict[str, set[str]] = {}
+            for key in keys:
+                base, dot, suf = key.partition(".")
+                base_u = base.strip().upper()
+                if not base_u:
+                    continue
+                suffixes = base_map.setdefault(base_u, set())
+                if dot and suf:
+                    suffixes.add(suf.strip().upper())
+            if base_map:
+                inserted_keys_map[emp_u] = base_map
+
+        if inserted_keys_map:
+            scada_messages, scada_failed = apply_scada_updates(
+                inserted_keys_map=inserted_keys_map,
+                env=env,
+                autoada_dir=AUTOADA_DIR,
+                enable=False,
+                log_filename="eliminar_scada_off_confirm.log",
+                record_status=None,
+            )
+            extra_messages.extend(scada_messages)
+
+    status_final = "SUCCESS"
+    message_final = "Verificación post Delete/Purge completada. Tags eliminados."
+    if scada_failed:
+        status_final = "ERROR"
+        message_final = "Verificación completada con errores en SCADA."
+
+    last_eliminar_pending = False
+    last_eliminar_state = None
+    extra_payload: dict[str, Any] = {"details": extra_messages}
+    _store(status_final, message_final, files=files_collected, extra=extra_payload)
+    yield from _yield_summary(message_final, "success" if status_final == "SUCCESS" else "error")
+    yield _result_line({"status": status_final, "message": message_final, "files": files_collected, "details": extra_messages})
+
+
 def validar_hsh_pipeline() -> Generator[str, None, None]:
     """Flujo web para Validar HSH (equivale al handler desktop)."""
     global last_validar_result
     last_validar_result = None
 
+    reset_stop_flag()
     extra_messages: list[str] = []
 
     def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):

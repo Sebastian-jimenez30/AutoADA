@@ -51,6 +51,7 @@
       data-run-url="/unifilares/validar/run"
       data-result-url="/unifilares/validar/result"
       data-file-download="/unifilares/validar/result/download"
+      data-stop-url="/unifilares/stop"
     >
       <input type="hidden" id="aplicar" name="aplicar" value="">
       <input type="hidden" id="actualizarFlag" name="actualizar" value="">
@@ -118,7 +119,10 @@
           status_id="logStatus",
           output_id="logOutput",
           result_id="resultMessage",
-          wrapper_class="buscarkey-console"
+          wrapper_class="buscarkey-console",
+          show_controls=True,
+          stop_id="consoleStopBtn",
+          download_id="consoleDownloadBtn"
         ) }}
       </div>
 

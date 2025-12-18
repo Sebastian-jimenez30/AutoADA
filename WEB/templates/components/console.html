@@ -4,12 +4,27 @@
     output_id="consoleOutput",
     result_id="consoleResult",
     wrapper_class="console-panel card",
-    initial_status="En espera"
+    initial_status="En espera",
+    show_controls=False,
+    stop_id=None,
+    download_id=None
 ) -%}
+{% set stop_btn_id = stop_id or output_id ~ "_stop" %}
+{% set download_btn_id = download_id or output_id ~ "_download" %}
 <section class="{{ wrapper_class }}">
   <div class="console-header">
     <h3>{{ title }}</h3>
-    <span id="{{ status_id }}" class="console-status">{{ initial_status }}</span>
+    <div class="console-actions">
+      <span id="{{ status_id }}" class="console-status">{{ initial_status }}</span>
+      {% if show_controls %}
+      <button type="button" class="console-btn console-btn-danger" id="{{ stop_btn_id }}" title="Detener ejecución" aria-label="Detener ejecución">
+        &#11044;
+      </button>
+      <button type="button" class="console-btn console-btn-download" id="{{ download_btn_id }}" title="Descargar consola" aria-label="Descargar consola">
+        &#8681;
+      </button>
+      {% endif %}
+    </div>
   </div>
   <pre class="console-output" id="{{ output_id }}"></pre>
   <div id="{{ result_id }}" class="console-result"></div>

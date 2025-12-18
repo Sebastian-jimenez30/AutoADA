@@ -339,10 +339,20 @@ def ejecutar_hsh_eliminar(
             )
         finally:
             try:
-                os.remove(tmp_path)
+                if not hsh_controller.is_eliminar_pending():
+                    os.remove(tmp_path)
             except Exception:
                 pass
 
+    return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
+
+
+@router.post("/hsh/eliminar/confirm")
+def confirmar_hsh_eliminar():
+    def _pipeline():
+        yield from hsh_controller.confirmar_eliminar_pipeline()
+        if not hsh_controller.is_eliminar_pending():
+            hsh_controller.cleanup_eliminar_file()
     return StreamingResponse(_pipeline(), media_type="text/plain; charset=utf-8")
 
 
@@ -377,3 +387,9 @@ def descargar_hsh_eliminar_result(path: str):
         filename=resolved.name,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/hsh/stop")
+def detener_hsh():
+    hsh_controller.request_stop()
+    return {"status": "OK", "message": "Proceso detenido a solicitud del usuario."}

@@ -107,3 +107,9 @@ def descargar_unifilares_validar_result(path: str):
         filename=resolved.name,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/unifilares/stop")
+def detener_unifilares():
+    unifilares_controller.request_stop()
+    return {"status": "OK", "message": "Proceso detenido a solicitud del usuario."}

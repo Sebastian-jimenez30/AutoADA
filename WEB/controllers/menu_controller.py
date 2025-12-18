@@ -2,6 +2,8 @@
 
 import os
 import socket
+import subprocess
+import threading
 from typing import Any, Generator
 
 from utils.cli import build_cmd
@@ -17,6 +19,41 @@ SERVER_RESOLVER = ServerResolver(os.path.join(AUTOADA_DIR, "config"))
 SERVER_RESOLVER._path = os.path.join(AUTOADA_DIR, "config", "servers.json")
 
 DEFAULT_DOMINIO = "CC"
+
+_STOP_REQUESTED = False
+_PROC_LOCK = threading.Lock()
+_CURRENT_PROC: subprocess.Popen | None = None
+
+
+def _request_stop() -> None:
+    """Marca stop y termina el proceso activo si sigue vivo."""
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+    with _PROC_LOCK:
+        proc = _CURRENT_PROC
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+
+
+def _should_stop() -> bool:
+    return _STOP_REQUESTED
+
+
+def _set_current_proc(proc: subprocess.Popen | None) -> None:
+    global _CURRENT_PROC
+    with _PROC_LOCK:
+        _CURRENT_PROC = proc
+
+
+def reset_stop_flag() -> None:
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = False
 
 
 def get_empresas() -> list[str]:
@@ -72,6 +109,7 @@ def get_status() -> dict[str, Any]:
 def actualizar_datos_pipeline() -> Generator[str, None, None]:
     empresas = get_empresas()
     dominio = DEFAULT_DOMINIO
+    reset_stop_flag()
 
     try:
         env = VaultService.build_env()
@@ -94,6 +132,9 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
     yield from _summary("Actualizacion global iniciada")
 
     for empresa in empresas:
+        if _should_stop():
+            yield _result_line("ERROR", "Proceso detenido por el usuario.")
+            return
         servidor = SERVER_RESOLVER.generar_server(empresa, dominio)
         if not servidor:
             yield _result_line("ERROR", f"{empresa}: no se pudo resolver servidor (dominio {dominio}).")
@@ -105,9 +146,15 @@ def actualizar_datos_pipeline() -> Generator[str, None, None]:
         if rc_import != 0:
             yield _result_line("ERROR", f"{empresa}: importar_all termino con rc={rc_import}")
             continue
+        if _should_stop():
+            yield _result_line("ERROR", "Proceso detenido por el usuario.")
+            return
 
         # Convertir componentes
         for comp in ("sca", "hsh", "ods", "ods_csv"):
+            if _should_stop():
+                yield _result_line("ERROR", "Proceso detenido por el usuario.")
+                return
             tag = f"CONVERT-{empresa}-{comp.upper()}"
             args = ["scripts.Convertir_all", empresa, "Buscar_keys", "--only", comp]
             if comp == "sca":
@@ -130,8 +177,6 @@ def _run_subprocess(
     *,
     env: dict[str, str] | None = None,
 ) -> Generator[str, None, int]:
-    import subprocess
-
     yield f"\n--- {label} ---\n"
     yield f"$ {' '.join(cmd)}\n"
     proc_env = (env or os.environ).copy()
@@ -146,10 +191,21 @@ def _run_subprocess(
         cwd=AUTOADA_DIR,
         env=proc_env,
     )
+    _set_current_proc(proc)
     rc: int | None = None
     try:
         assert proc.stdout is not None
         for raw in proc.stdout:
+            if _should_stop():
+                try:
+                    proc.terminate()
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                yield f"[{label}] Proceso detenido por el usuario.\n"
+                break
             line = raw.rstrip("\r\n")
             if line:
                 yield f"[{label}] {line}\n"
@@ -159,6 +215,7 @@ def _run_subprocess(
                 proc.stdout.close()
         except Exception:
             pass
+        _set_current_proc(None)
     rc = proc.wait()
     yield f"[{label}] Codigo de salida: {rc}\n"
     return rc

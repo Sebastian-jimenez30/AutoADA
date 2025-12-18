@@ -35,3 +35,9 @@ def menu_status():
 def menu_actualizar():
     generator = menu_controller.actualizar_datos_pipeline()
     return StreamingResponse(generator, media_type="text/plain; charset=utf-8")
+
+
+@router.post("/menu/stop")
+def menu_stop():
+    menu_controller._request_stop()
+    return JSONResponse({"status": "OK", "message": "Detención solicitada"})

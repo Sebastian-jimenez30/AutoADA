@@ -126,3 +126,9 @@ def descargar_resultado_buscar_key():
         raise HTTPException(status_code=404, detail="No hay archivo disponible.")
     filename = os.path.basename(path)
     return FileResponse(path, filename=filename, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@router.post("/buscar/stop")
+def detener_buscar():
+    buscar_controller.request_stop()
+    return {"status": "OK", "message": "Proceso detenido a solicitud del usuario."}
