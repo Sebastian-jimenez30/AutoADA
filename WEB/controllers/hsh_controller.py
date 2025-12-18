@@ -3113,11 +3113,11 @@ def confirmar_eliminar_pipeline() -> Generator[str, None, None]:
     pre_commands: list[tuple[str, list[str]] | None] = [
         (
             "IMPORT-PRINCIPAL",
-            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_confirm", "--dominio", "CC"),
+            build_cmd("scripts.importar_all", servidor_principal, empresa, "sca,hsh", "--usecase", "hsh_eliminar_tag", "--dominio", "CC"),
         ),
         (
             "IMPORT-RESPALDO",
-            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_confirm", "--dominio", "CC"),
+            build_cmd("scripts.importar_all", servidor_respaldo, respaldo, "sca,hsh", "--usecase", "hsh_eliminar_tag", "--dominio", "CC"),
         )
         if respaldo and servidor_respaldo
         else None,
@@ -3149,7 +3149,7 @@ def confirmar_eliminar_pipeline() -> Generator[str, None, None]:
             yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
             return
 
-    cmd_check = build_cmd("scripts.hsh_eliminar_tag", empresa, "--input", archivo_path, "--check-only")
+    cmd_check = build_cmd("scripts.hsh_eliminar_tag", empresa, "--input", archivo_path)
     if respaldo:
         cmd_check += ["--respaldo", respaldo]
     if servidor_principal:
