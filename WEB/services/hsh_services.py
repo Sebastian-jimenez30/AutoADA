@@ -599,6 +599,61 @@ foreach ($target in $targets) {{
 
               if err_output:
                 console_write(f"[PI] {his_host} STDERR: {err_output}", "warn")
+                # Fallback a consultas individuales si el batch falla por StreamQuery/ObjectDisposed
+                if "StreamQuery" in err_output or "ObjectDisposed" in err_output:
+                  for t in list(tags_pending):
+                    try:
+                      cmd_single = _encoded_ps_single(emp_u, t, pi_server)
+                      out_single, err_single, to_single = _exec_command_with_timeout(
+                        client_his,
+                        cmd_single,
+                        pi_command_timeout_s,
+                      )
+                      if to_single:
+                        tag_last_error[t] = f"timeout ({pi_command_timeout_s}s)"
+                        _record(emp_u, f"{t}: {his_host} timeout (fallback)", None)
+                        console_write(f"[PI] {his_host}: timeout consultando {t} (fallback single)", "warn")
+                        continue
+                      if err_single:
+                        tag_last_error[t] = err_single
+                        console_write(f"[PI] {his_host}: STDERR fallback {t}: {err_single}", "warn")
+                        continue
+                      idx_single = out_single.find("__PI_JSON__:")
+                      if idx_single == -1:
+                        tag_last_error[t] = out_single.strip() or "respuesta inesperada"
+                        console_write(f"[PI] {his_host}: respuesta inesperada fallback {t}", "warn")
+                        continue
+                      raw_obj_single = json.loads(out_single[idx_single + len("__PI_JSON__:") :].strip() or "{}")
+                      raw_rows = raw_obj_single if isinstance(raw_obj_single, (list, dict)) else {}
+                      normalized_single: List[Dict[str, str]] = []
+                      if isinstance(raw_rows, list):
+                        for item in raw_rows:
+                          if isinstance(item, dict):
+                            normalized_single.append(
+                              {
+                                "Name": str(item.get("Name", item.get("name", "?"))),
+                                "Value": str(item.get("Value", item.get("value", ""))),
+                                "Timestamp": str(item.get("Timestamp", item.get("timestamp", ""))),
+                              }
+                            )
+                      elif isinstance(raw_rows, dict) and raw_rows:
+                        normalized_single.append(
+                          {
+                            "Name": str(raw_rows.get("Name", raw_rows.get("name", "?"))),
+                            "Value": str(raw_rows.get("Value", raw_rows.get("value", ""))),
+                            "Timestamp": str(raw_rows.get("Timestamp", raw_rows.get("timestamp", ""))),
+                          }
+                        )
+                      if normalized_single:
+                        tag_rows_map[t] = normalized_single
+                        aggregated_rows.extend(normalized_single)
+                        console_write(f"[PI] {his_host}: valores (fallback) para {t}", "info")
+                      else:
+                        tag_last_error[t] = "sin valores"
+                    except Exception as exc_fallback:
+                      tag_last_error[t] = str(exc_fallback)
+                      _record(emp_u, f"{t}: error fallback {his_host}: {exc_fallback}", None)
+                  continue
 
               marker = "__PI_JSON__:"
               idx = output.find(marker)

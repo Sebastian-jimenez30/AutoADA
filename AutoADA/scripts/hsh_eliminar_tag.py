@@ -214,6 +214,18 @@ def _enumerate_and_optionally_delete(empresa: str, server: str, base_keys: Set[s
     Enumera keys por prefijo y, si apply=True, borra por lista exacta ($in).
     Retorna: (deleted_count, remaining_count, full_seen_before, full_seen_after)
     """
+    class _DummyLogger:
+        def info(self, *args, **kwargs): pass
+        def warning(self, *args, **kwargs): pass
+        def error(self, *args, **kwargs): pass
+        def exception(self, *args, **kwargs): pass
+        def debug(self, *args, **kwargs): pass
+
+    if logger is None:
+        logger = _DummyLogger()
+    if logger_console is None:
+        logger_console = _DummyLogger()
+
     client = tunnel = None
     cert_path = ca_path = None
     full_before: Set[str] = set()

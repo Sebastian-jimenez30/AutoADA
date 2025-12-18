@@ -3161,8 +3161,19 @@ def confirmar_eliminar_pipeline() -> Generator[str, None, None]:
     if rc_check != 0:
         message = f"Verificación post Delete/Purge falló (rc={rc_check})."
         last_eliminar_pending = True
-        _store("ERROR", message, files=files_collected, extra={"details": extra_messages})
-        yield _result_line({"status": "ERROR", "message": message, "files": files_collected})
+        payload_pending = {
+            "status": "PENDING_CONFIRM",
+            "message": message,
+            "files": files_collected,
+            "confirm_needed": True,
+            "delete_files": state.get("delete_files", []),
+            "purge_files": state.get("purge_files", []),
+            "details": extra_messages,
+        }
+        yield from _yield_summary("Verificación con errores, vuelve a confirmar Delete/Purge.", "warning")
+        yield "CONFIRM_DELETE::pending\n"
+        _store(payload_pending["status"], payload_pending["message"], files=files_collected, extra=payload_pending)
+        yield _result_line(payload_pending)
         return
 
     issues: list[str] = []
