@@ -296,15 +296,23 @@ $target = ConvertFrom-Json @'
 {tag_json}
 '@
 $result = @()
-foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*SCADA*", $true)) {{
-    if ($piPoint.Name -like "*${{target}}*") {{
-        $cv = $piPoint.CurrentValue()
-        $result += [PSCustomObject]@{{
-            Name = $piPoint.Name
-            Value = $cv.Value.ToString()
-            Timestamp = $cv.Timestamp.ToString()
-        }}
+$piPoint = $null
+try {{
+    $piPoint = [OSIsoft.AF.PI.PIPoint]::FindPIPoint($piServer, $target)
+}} catch {{}}
+if (-not $piPoint) {{
+    $candidates = [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "*${{target}}*", $true)
+    foreach ($p in $candidates) {{
+        $piPoint = $p
         break
+    }}
+}}
+if ($piPoint -ne $null) {{
+    $cv = $piPoint.CurrentValue()
+    $result += [PSCustomObject]@{{
+        Name = $piPoint.Name
+        Value = $cv.Value.ToString()
+        Timestamp = $cv.Timestamp.ToString()
     }}
 }}
 "__PI_JSON__:" + ($result | ConvertTo-Json -Depth 4 -Compress)
@@ -314,7 +322,6 @@ foreach ($piPoint in [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*S
         pi_pass_ps=pi_pass_ps,
         pi_user_ps=pi_user_ps,
         tag_json=tag_json,
-        emp_u=emp_u,
       )
       encoded = base64.b64encode(ps_script.encode("utf-16-le")).decode("utf-8")
       return f"powershell -NoLogo -NonInteractive -EncodedCommand {encoded}"
@@ -333,18 +340,25 @@ $targets = ConvertFrom-Json @'
 {tags_json}
 '@
 $result = @{{}}
-$allPoints = [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "{emp_u}*SCADA*", $true)
 foreach ($target in $targets) {{
     $hits = @()
-    foreach ($piPoint in $allPoints) {{
-        if ($piPoint.Name -like "*${{target}}*") {{
-            $cv = $piPoint.CurrentValue()
-            $hits += [PSCustomObject]@{{
-                Name = $piPoint.Name
-                Value = $cv.Value.ToString()
-                Timestamp = $cv.Timestamp.ToString()
-            }}
+    $piPoint = $null
+    try {{
+        $piPoint = [OSIsoft.AF.PI.PIPoint]::FindPIPoint($piServer, $target)
+    }} catch {{}}
+    if (-not $piPoint) {{
+        $candidates = [OSIsoft.AF.PI.PIPoint]::FindPIPoints($piServer, "*${{target}}*", $true)
+        foreach ($p in $candidates) {{
+            $piPoint = $p
             break
+        }}
+    }}
+    if ($piPoint -ne $null) {{
+        $cv = $piPoint.CurrentValue()
+        $hits += [PSCustomObject]@{{
+            Name = $piPoint.Name
+            Value = $cv.Value.ToString()
+            Timestamp = $cv.Timestamp.ToString()
         }}
     }}
     $result[$target] = $hits
@@ -356,7 +370,6 @@ foreach ($target in $targets) {{
         pi_pass_ps=pi_pass_ps,
         pi_user_ps=pi_user_ps,
         tags_json=tags_json,
-        emp_u=emp_u,
       )
       encoded = base64.b64encode(ps_script.encode("utf-16-le")).decode("utf-8")
       return f"powershell -NoLogo -NonInteractive -EncodedCommand {encoded}"
