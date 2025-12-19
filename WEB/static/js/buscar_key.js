@@ -988,7 +988,7 @@ const hideConfirmModal = () => {
       if (aplicarInput) {
         aplicarInput.value = "";
       }
-      if (actualizarInput) {
+      if (actualizarInput && actualizarInput.type !== "checkbox") {
         actualizarInput.value = "";
       }
       runApply = false;
@@ -1023,7 +1023,7 @@ const hideConfirmModal = () => {
       actualizarBtn.disabled = false;
       if (verificarBtn) verificarBtn.disabled = false;
       if (ejecutarBtn) ejecutarBtn.disabled = false;
-      if (actualizarInput) {
+      if (actualizarInput && actualizarInput.type !== "checkbox") {
         actualizarInput.value = "";
       }
       setParamsVisibility(false);

@@ -226,9 +226,10 @@ def obtener_jobs_crear_result(
 
 @router.get("/jobs/eliminar/result")
 def obtener_jobs_eliminar_result(
+    sheet: str | None = Query(None),
     limit: int = Query(500, ge=1, le=5000),
 ):
-    data = jobs_controller.load_jobs_eliminar_result_preview(limit=limit)
+    data = jobs_controller.load_jobs_eliminar_result_preview(sheet=sheet, limit=limit)
     if data is None:
         raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
     return data
@@ -236,9 +237,10 @@ def obtener_jobs_eliminar_result(
 
 @router.get("/jobs/cambiar-nombre/result")
 def obtener_jobs_cambiar_nombre_result(
+    sheet: str | None = Query(None),
     limit: int = Query(500, ge=1, le=5000),
 ):
-    data = jobs_controller.load_jobs_cambiar_result_preview(limit=limit)
+    data = jobs_controller.load_jobs_cambiar_result_preview(sheet=sheet, limit=limit)
     if data is None:
         raise HTTPException(status_code=404, detail="No hay resultados disponibles.")
     return data
@@ -308,3 +310,9 @@ def descargar_jobs_cambiar_nombre_result(path: str):
         filename=resolved.name,
         media_type="application/octet-stream",
     )
+
+
+@router.post("/jobs/stop")
+def detener_jobs():
+    jobs_controller.request_stop()
+    return {"status": "OK", "message": "Proceso detenido a solicitud del usuario."}

@@ -6,6 +6,7 @@ import socket
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generator, List, Optional
@@ -96,6 +97,191 @@ def _result_line(payload: dict[str, Any]) -> str:
     return f"RESULT::{json.dumps(payload, ensure_ascii=False)}\n"
 
 
+def _normalize_path(path: str) -> str:
+    p = os.path.normpath(path)
+    if not os.path.isabs(p):
+        p = os.path.normpath(os.path.join(AUTOADA_DIR, p))
+    return p
+
+
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for path in paths:
+        if not path:
+            continue
+        normalized = _normalize_path(path)
+        key = os.path.normcase(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(normalized)
+    return out
+
+
+def _filter_recent_files(paths: list[str], start_ts: float, slack_s: float = 2.0) -> list[str]:
+    if not paths:
+        return []
+    cutoff = start_ts - max(0.0, slack_s)
+    recent: list[str] = []
+    for path in paths:
+        try:
+            if os.path.getmtime(path) >= cutoff:
+                recent.append(path)
+        except Exception:
+            continue
+    return recent
+
+
+def _build_jobs_result_preview(
+    result: JobsCrearResult,
+    sheet: str | None,
+    limit: int,
+    download_base: str,
+) -> dict[str, Any]:
+    files = _dedupe_paths(result.files or [])
+
+    base_payload: dict[str, Any] = {
+        "status": result.status,
+        "message": result.message,
+        "files": files,
+        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
+        "sheets": [],
+        "active_sheet": None,
+        "columns": [],
+        "rows": [],
+        "total": 0,
+        "has_more": False,
+        "limit": limit,
+        "download_url": None,
+    }
+
+    excel_files = [f for f in files if f.lower().endswith((".xlsx", ".xlsm", ".xls")) and os.path.isfile(f)]
+    csv_files = [f for f in files if f.lower().endswith(".csv") and os.path.isfile(f)]
+
+    datasets: dict[str, dict[str, Any]] = {}
+    download_map: dict[str, str] = {}
+    used_names: set[str] = set()
+
+    def _unique_name(name: str) -> str:
+        if name not in used_names:
+            used_names.add(name)
+            return name
+        idx = 2
+        while True:
+            candidate = f"{name} ({idx})"
+            if candidate not in used_names:
+                used_names.add(candidate)
+                return candidate
+            idx += 1
+
+    for excel_path in excel_files:
+        try:
+            workbook = load_workbook(excel_path, read_only=True, data_only=True)
+        except Exception:
+            workbook = None
+        if not workbook:
+            continue
+        try:
+            base_name = os.path.splitext(os.path.basename(excel_path))[0]
+            sheet_key = _unique_name(base_name)
+            sheet_names = list(workbook.sheetnames)
+            if not sheet_names:
+                continue
+            sheet_name = sheet_names[0]
+            worksheet = workbook[sheet_name]
+            rows_iter = worksheet.iter_rows(values_only=True)
+            try:
+                headers_raw = next(rows_iter)
+            except StopIteration:
+                headers_raw = []
+
+            headers: list[str] = []
+            for idx, header in enumerate(headers_raw or (), start=1):
+                if isinstance(header, str):
+                    clean = header.strip()
+                    headers.append(clean if clean else f"Columna {idx}")
+                elif header is None:
+                    headers.append(f"Columna {idx}")
+                else:
+                    headers.append(str(header))
+
+            preview_rows: list[dict[str, Any]] = []
+            row_count = 0
+            has_more = False
+
+            for row in rows_iter:
+                row_count += 1
+                row_dict: dict[str, Any] = {}
+                for col_idx, header in enumerate(headers):
+                    value = row[col_idx] if col_idx < len(row) else None
+                    row_dict[header] = value
+                if row_count <= limit:
+                    preview_rows.append(row_dict)
+                else:
+                    has_more = True
+                    break
+
+            datasets[sheet_key] = {
+                "columns": headers,
+                "rows": preview_rows,
+                "total": row_count,
+                "has_more": has_more,
+            }
+            download_map[sheet_key] = f"{download_base}?path={quote(excel_path)}"
+        finally:
+            try:
+                workbook.close()
+            except Exception:
+                pass
+
+    for csv_path in csv_files:
+        base_name = os.path.splitext(os.path.basename(csv_path))[0]
+        sheet_key = _unique_name(base_name)
+        rows: list[dict[str, Any]] = []
+        total = 0
+        has_more = False
+        try:
+            with open(csv_path, "r", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    total += 1
+                    if total <= limit:
+                        rows.append({"line": line.rstrip("\r\n")})
+                    else:
+                        has_more = True
+                        break
+        except Exception:
+            continue
+
+        datasets[sheet_key] = {
+            "columns": ["line"],
+            "rows": rows,
+            "total": total,
+            "has_more": has_more,
+        }
+        download_map[sheet_key] = f"{download_base}?path={quote(csv_path)}"
+
+    if not datasets:
+        return base_payload
+
+    sheets = list(datasets.keys())
+    active_sheet = sheet if sheet in sheets else sheets[0]
+    active = datasets.get(active_sheet, {})
+
+    base_payload.update(
+        {
+            "sheets": sheets,
+            "active_sheet": active_sheet,
+            "columns": active.get("columns", []),
+            "rows": active.get("rows", []),
+            "total": active.get("total", 0),
+            "has_more": active.get("has_more", False),
+            "download_url": download_map.get(active_sheet),
+        }
+    )
+    return base_payload
+
+
 def _run_subprocess_stream(
     cmd: list[str],
     label: str,
@@ -179,6 +365,7 @@ def crear_senales_pipeline(
     global last_jobs_crear_result
     last_jobs_crear_result = None
     reset_stop_flag()
+    run_started = time.time()
     extra_messages: list[str] = []
 
     def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -341,6 +528,10 @@ def crear_senales_pipeline(
             if os.path.isfile(fpath):
                 files.append(os.path.normpath(fpath))
 
+    files = _dedupe_paths(files)
+    recent_files = _filter_recent_files(files, run_started)
+    files = recent_files or files
+
     extra_payload: dict[str, Any] = {"details": extra_messages}
     report_path = os.path.join(LOAD_DIR, "Senales_with_keys.xlsx")
     if os.path.isfile(report_path):
@@ -359,103 +550,7 @@ def load_jobs_crear_result_preview(sheet: str | None = None, limit: int = 500) -
     result = last_jobs_crear_result
     if result is None:
         return None
-
-    def _normalize_path(path: str) -> str:
-        p = os.path.normpath(path)
-        if not os.path.isabs(p):
-            p = os.path.normpath(os.path.join(AUTOADA_DIR, p))
-        return p
-
-    report_path = None
-    if isinstance(result.extra, dict):
-        report_path = result.extra.get("report_path")
-    if report_path:
-        report_path = _normalize_path(report_path)
-    if not report_path or not os.path.isfile(report_path):
-        candidate = os.path.join(LOAD_DIR, "Senales_with_keys.xlsx")
-        candidate = os.path.normpath(candidate)
-        if os.path.isfile(candidate):
-            report_path = candidate
-
-    base_payload: dict[str, Any] = {
-        "status": result.status,
-        "message": result.message,
-        "files": result.files,
-        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
-        "sheets": [],
-        "active_sheet": None,
-        "columns": [],
-        "rows": [],
-        "total": 0,
-        "has_more": False,
-        "limit": limit,
-        "download_url": None,
-    }
-
-    if not report_path or not os.path.isfile(report_path):
-        return base_payload
-
-    wb = load_workbook(report_path, read_only=True, data_only=True)
-    try:
-        sheet_names = list(wb.sheetnames)
-        if not sheet_names:
-            base_payload["report_path"] = report_path
-            return base_payload
-
-        active_sheet = sheet if sheet in sheet_names else sheet_names[0]
-        ws = wb[active_sheet]
-        rows_iter = ws.iter_rows(values_only=True)
-
-        try:
-            headers_raw = next(rows_iter)
-        except StopIteration:
-            base_payload["sheets"] = sheet_names
-            base_payload["active_sheet"] = active_sheet
-            return base_payload
-
-        headers: list[str] = []
-        for idx, header in enumerate(headers_raw or (), start=1):
-            if isinstance(header, str):
-                clean = header.strip()
-                headers.append(clean if clean else f"Columna {idx}")
-            elif header is None:
-                headers.append(f"Columna {idx}")
-            else:
-                headers.append(str(header))
-
-        preview_rows: list[dict[str, Any]] = []
-        row_count = 0
-        has_more = False
-
-        for row in rows_iter:
-            row_count += 1
-            row_dict: dict[str, Any] = {}
-            for col_idx, header in enumerate(headers):
-                value = row[col_idx] if col_idx < len(row) else None
-                row_dict[header] = value
-            if row_count <= limit:
-                preview_rows.append(row_dict)
-            else:
-                has_more = True
-                break
-
-        download_url = f"/jobs/crear/result/download?path={quote(report_path)}"
-
-        base_payload.update(
-            {
-                "sheets": sheet_names,
-                "active_sheet": active_sheet,
-                "columns": headers,
-                "rows": preview_rows,
-                "total": row_count,
-                "has_more": has_more,
-                "download_url": download_url,
-                "report_path": report_path,
-            }
-        )
-        return base_payload
-    finally:
-        wb.close()
+    return _build_jobs_result_preview(result, sheet, limit, "/jobs/crear/result/download")
 
 
 def eliminar_senales_pipeline(
@@ -468,6 +563,7 @@ def eliminar_senales_pipeline(
     """Flujo web para Jobs -> Eliminar señales (equivale al handler desktop)."""
     global last_jobs_eliminar_result
     last_jobs_eliminar_result = None
+    run_started = time.time()
     extra_messages: list[str] = []
 
     def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -592,6 +688,10 @@ def eliminar_senales_pipeline(
             if os.path.isfile(fpath):
                 files.append(os.path.normpath(fpath))
 
+    files = _dedupe_paths(files)
+    recent_files = _filter_recent_files(files, run_started)
+    files = recent_files or files
+
     extra_payload: dict[str, Any] = {"details": extra_messages}
     _store(status, message, files=files, extra=extra_payload)
     payload = {"status": status, "message": message, "files": files, "details": extra_messages}
@@ -602,65 +702,11 @@ def get_last_jobs_eliminar_result() -> JobsCrearResult | None:
     return last_jobs_eliminar_result
 
 
-def load_jobs_eliminar_result_preview(limit: int = 500) -> dict[str, Any] | None:
+def load_jobs_eliminar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
     result = last_jobs_eliminar_result
     if result is None:
         return None
-
-    base_payload: dict[str, Any] = {
-        "status": result.status,
-        "message": result.message,
-        "files": result.files,
-        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
-        "sheets": [],
-        "active_sheet": None,
-        "columns": [],
-        "rows": [],
-        "total": 0,
-        "has_more": False,
-        "limit": limit,
-        "download_url": None,
-    }
-
-    # Mostrar vista previa si hay un CSV principal
-    csv_path = None
-    for f in result.files or []:
-        if str(f).lower().endswith("delete_scada.csv"):
-            csv_path = f
-            break
-    if not csv_path or not os.path.isfile(csv_path):
-        return base_payload
-
-    rows: list[dict[str, Any]] = []
-    total = 0
-    has_more = False
-    try:
-        with open(csv_path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                total += 1
-                if total == 1:
-                    continue  # encabezado/primera línea especial
-                if total <= limit + 1:
-                    rows.append({"line": line.strip()})
-                else:
-                    has_more = True
-                    break
-    except Exception:
-        return base_payload
-
-    download_url = f"/jobs/eliminar/result/download?path={quote(csv_path)}"
-    base_payload.update(
-        {
-            "sheets": ["Delete_scada.csv"],
-            "active_sheet": "Delete_scada.csv",
-            "columns": ["line"],
-            "rows": rows,
-            "total": total,
-            "has_more": has_more,
-            "download_url": download_url,
-        }
-    )
-    return base_payload
+    return _build_jobs_result_preview(result, sheet, limit, "/jobs/eliminar/result/download")
 
 
 def cambiar_nombre_pipeline(
@@ -673,6 +719,7 @@ def cambiar_nombre_pipeline(
     """Flujo web para Jobs -> Cambiar nombre (equivalente al handler desktop)."""
     global last_jobs_cambiar_result
     last_jobs_cambiar_result = None
+    run_started = time.time()
     extra_messages: list[str] = []
 
     def _store(status: str, message: str, files: list[str] | None = None, extra: dict[str, Any] | None = None):
@@ -793,6 +840,10 @@ def cambiar_nombre_pipeline(
             if os.path.isfile(fpath):
                 files.append(os.path.normpath(fpath))
 
+    files = _dedupe_paths(files)
+    recent_files = _filter_recent_files(files, run_started)
+    files = recent_files or files
+
     extra_payload: dict[str, Any] = {"details": extra_messages}
     _store(status, message, files=files, extra=extra_payload)
     payload = {"status": status, "message": message, "files": files, "details": extra_messages}
@@ -803,59 +854,8 @@ def get_last_jobs_cambiar_result() -> JobsCrearResult | None:
     return last_jobs_cambiar_result
 
 
-def load_jobs_cambiar_result_preview(limit: int = 500) -> dict[str, Any] | None:
+def load_jobs_cambiar_result_preview(sheet: str | None = None, limit: int = 500) -> dict[str, Any] | None:
     result = last_jobs_cambiar_result
     if result is None:
         return None
-
-    base_payload: dict[str, Any] = {
-        "status": result.status,
-        "message": result.message,
-        "files": result.files,
-        "details": result.extra.get("details", []) if isinstance(result.extra, dict) else [],
-        "sheets": [],
-        "active_sheet": None,
-        "columns": [],
-        "rows": [],
-        "total": 0,
-        "has_more": False,
-        "limit": limit,
-        "download_url": None,
-    }
-
-    csv_path = None
-    for f in result.files or []:
-        if str(f).lower().endswith("change_key.csv"):
-            csv_path = f
-            break
-    if not csv_path or not os.path.isfile(csv_path):
-        return base_payload
-
-    rows: list[dict[str, Any]] = []
-    total = 0
-    has_more = False
-    try:
-        with open(csv_path, "r", encoding="utf-8") as fh:
-            for line in fh:
-                total += 1
-                if total <= limit:
-                    rows.append({"line": line.strip()})
-                else:
-                    has_more = True
-                    break
-    except Exception:
-        return base_payload
-
-    download_url = f"/jobs/cambiar-nombre/result/download?path={quote(csv_path)}"
-    base_payload.update(
-        {
-            "sheets": ["change_key.csv"],
-            "active_sheet": "change_key.csv",
-            "columns": ["line"],
-            "rows": rows,
-            "total": total,
-            "has_more": has_more,
-            "download_url": download_url,
-        }
-    )
-    return base_payload
+    return _build_jobs_result_preview(result, sheet, limit, "/jobs/cambiar-nombre/result/download")

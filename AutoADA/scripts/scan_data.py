@@ -511,7 +511,7 @@ def buscar_keys_usar_en_scada(df, columna_tipo, columna_rtu, dicc):
     df_sin_keys = df.loc[indices_sin_key].copy()
     return df_con_keys, df_sin_keys
 
-def validaciones(dfs, ioa):
+def validaciones(dfs, ioa,ioa_controles):
     errores = []
     Logger.write_log().log_all('info', "Iniciando validaciones de duplicados y valores", logger_console, logger)
     status = dfs.get('STATUS', pd.DataFrame()).dropna(subset=['Name']).copy()
@@ -527,13 +527,32 @@ def validaciones(dfs, ioa):
     
     df_combinado = pd.concat([status, analog], ignore_index=True)
 
-    # Verificar si todas las señales son de tipo Manual o Cálculo (no requieren RTU)
+    # Identificar señales ICCP: RTU vacío y Type T_IND (STATUS) o T_ANLG (ANALOG)
     tipos_sin_rtu = ['M_IND', 'C_IND', 'C_ANLG']
-    if 'Type' in df_combinado.columns:
-        todos_sin_rtu = df_combinado['Type'].notna() & df_combinado['Type'].isin(tipos_sin_rtu)
-        solo_señales_sin_rtu = todos_sin_rtu.all()
+    # Determinar filas ICCP según regla: RTU vacío y Type específico por hoja
+    if 'RTU' in df_combinado.columns:
+        rt_empty = df_combinado['RTU'].isna() | (df_combinado['RTU'].astype(str).str.strip() == '')
     else:
-        solo_señales_sin_rtu = False
+        rt_empty = pd.Series([True] * len(df_combinado), index=df_combinado.index)
+    sheet_series = df_combinado.get('_sheet_name', pd.Series([None] * len(df_combinado), index=df_combinado.index))
+    mask_iccp = rt_empty & (
+        ((sheet_series == 'STATUS') & (df_combinado.get('Type') == 'T_IND')) |
+        ((sheet_series == 'ANALOG') & (df_combinado.get('Type') == 'T_ANLG'))
+    )
+    n_iccp = int(mask_iccp.sum())
+    if n_iccp > 0:
+        Logger.write_log().log_all('info', f"Se detectaron {n_iccp} señales ICCP (RTU vacío y Type T_IND/T_ANLG)", logger_console, logger)
+    # DataFrame con filas que requieren RTU (excluye ICCP-only)
+    df_no_iccp = df_combinado.loc[~mask_iccp].copy()
+    # Decidir si las señales restantes son todas de tipo manual/cálculo (no requieren RTU)
+    if df_no_iccp.empty:
+        solo_señales_sin_rtu = True
+    else:
+        if 'Type' in df_no_iccp.columns:
+            todos_sin_rtu = df_no_iccp['Type'].notna() & df_no_iccp['Type'].isin(tipos_sin_rtu)
+            solo_señales_sin_rtu = todos_sin_rtu.all()
+        else:
+            solo_señales_sin_rtu = False
 
     # Validación de columnas con ':' y valor antes de los dos puntos
     # Definir columnas específicas por hoja
@@ -566,7 +585,14 @@ def validaciones(dfs, ioa):
                         command_type = df_sheet.at[idx, 'Command Type']
                         if pd.isna(command_type) or command_type == '':
                             continue  # Saltar validación si no hay Command Type
-                    
+
+                    # Saltar validación de RTU para señales ICCP (RTU vacío y Type T_IND/T_ANLG)
+                    if col == 'RTU':
+                        tp = df_sheet.at[idx, 'Type'] if 'Type' in df_sheet.columns else None
+                        if pd.isna(val) or val == '':
+                            if (sheet_name == 'STATUS' and tp == 'T_IND') or (sheet_name == 'ANALOG' and tp == 'T_ANLG'):
+                                continue  # Es señal ICCP, RTU puede estar vacío
+
                     # Validar si la celda está vacía o tiene formato incorrecto
                     if pd.isna(val) or val == '' or not isinstance(val, str) or ':' not in val or val.split(':', 1)[0].strip() == '':
                         # Obtener fila original (idx + 1 porque se eliminó el encabezado)
@@ -583,13 +609,14 @@ def validaciones(dfs, ioa):
     # Validar unicidad de RTU SOLO si hay señales que requieren RTU
     rtu_valor = None  # Inicializar variable
     if not solo_señales_sin_rtu:
-        if 'RTU' not in df_combinado.columns or df_combinado['RTU'].isna().all():
+        # Verificar columna RTU en las filas que requieren RTU (df_no_iccp)
+        if 'RTU' not in df_no_iccp.columns or df_no_iccp['RTU'].isna().all():
             error_msg = "Error: No hay valores válidos de RTU en el DataFrame (requerido para señales FEP)"
             errores.append(error_msg)
             Logger.write_log().log_all('error', error_msg, logger_console, logger)
             return None, errores
             
-        rtu_valores = set(df_combinado['RTU'].dropna().astype(str).str.split(':').str[0])
+        rtu_valores = set(df_no_iccp['RTU'].dropna().astype(str).str.split(':').str[0])
         if len(rtu_valores) == 1:
             rtu_valor = rtu_valores.pop()
         else:
@@ -598,8 +625,8 @@ def validaciones(dfs, ioa):
             Logger.write_log().log_all('error', error_msg, logger_console, logger)
             return None, errores  # Retornar aquí también
     else:
-        # Si todas son señales sin RTU, no validar RTU
-        Logger.write_log().log_all('info', "Todas las señales son de tipo Manual/Cálculo - RTU no requerido", logger_console, logger)
+        # Si todas son señales sin RTU (incluye ICCP-only y manual/cálculo), no validar RTU
+        Logger.write_log().log_all('info', "Todas las señales son de tipo Manual/Cálculo o ICCP-only - RTU no requerido", logger_console, logger)
 
     # Validar duplicados en 'Name' y 'Monitoring Address' omitiendo NaN
     for sheet_name, df in [('STATUS', status), ('ANALOG', analog)]:
@@ -643,7 +670,9 @@ def validaciones(dfs, ioa):
             status_rtu = status[status['RTU'].astype(str).str.split(':').str[0] == rtu_valor]
             analog_rtu = analog[analog['RTU'].astype(str).str.split(':').str[0] == rtu_valor]
             ioas_excel = pd.concat([status_rtu['Monitoring Address'], analog_rtu['Monitoring Address']]).dropna()
+            ioa_excel_comandos=status_rtu['Command Address'].dropna()
             ioas_excel = ioas_excel.astype(str).str.strip()
+            ioa_excel_comandos=ioa_excel_comandos.astype(str).str.strip()
             
             # Obtener IOAs del fEP para la RTU actual
             try:
@@ -653,11 +682,15 @@ def validaciones(dfs, ioa):
                 rtu_key = rtu_valor
                 
             ioa_rtu = ioa.get(rtu_key, set())
+            ioa_rtu_comandos=ioa_controles.get(rtu_key,set())
+            # Normalizar IOAs del fEP a strings para comparación
             ioa_normalizado = set(str(x) for x in ioa_rtu)
+            ioa_normalizado_comandos=set(str(x) for x in ioa_rtu_comandos)
             ioas_en_fep = ioa_normalizado.intersection(set(ioas_excel))
-
-            if ioas_en_fep:
-                error_msg = f"Las siguientes IOA del Excel ya existen en Fep: {', '.join(ioas_en_fep)}"
+            ioas_en_fep_comandos=ioa_normalizado_comandos.intersection(set(ioa_excel_comandos))
+            ioas_en_fep_total = ioas_en_fep.union(ioas_en_fep_comandos)
+            if ioas_en_fep_total:
+                error_msg = f"Las siguientes IOA del Excel ya existen en Fep: {', '.join(ioas_en_fep_total)}"
                 errores.append(error_msg)
                 Logger.write_log().log_all('error', error_msg, logger_console, logger)
         except Exception as e:
@@ -728,18 +761,30 @@ def asignar_claves_iccp(df, ruta_scada):
             df_36_16 = pd.DataFrame(columns=['REC_KEY'])
             Logger.write_log().log_all('warning', f"Archivo {archivo_36_16} no existe, se usará un DataFrame vacío", logger_console, logger)
         
-        # Verificar si existe la columna Import ICCP Name
+        # Detectar ICCP tanto por 'Import ICCP Name' como por regla: RTU vacío y Type T_IND/T_ANLG
         if 'Import ICCP Name' not in df.columns:
-            Logger.write_log().log_all('warning', "No existe columna 'Import ICCP Name' en el DataFrame", logger_console, logger)
-            return df, pd.DataFrame()
-        
-        # Separar señales con/sin ICCP
-        df_con_iccp = df[df['Import ICCP Name'].notna()].copy()
-        df_sin_iccp = df[df['Import ICCP Name'].isna()].copy()
-        
+            df['Import ICCP Name'] = pd.NA
+        # RTU vacío?
+        if 'RTU' in df.columns:
+            rt_empty = df['RTU'].isna() | (df['RTU'].astype(str).str.strip() == '')
+        else:
+            rt_empty = pd.Series([True] * len(df), index=df.index)
+        sheet_series = df.get('S-A', pd.Series([None] * len(df), index=df.index))
+        iccp_rule_mask = rt_empty & (
+            ((sheet_series == 'STATUS') & (df.get('Type') == 'T_IND')) |
+            ((sheet_series == 'ANALOG') & (df.get('Type') == 'T_ANLG'))
+        )
+        # Señales ICCP son las que tienen Import ICCP Name o cumplen la regla
+        con_iccp_mask = df['Import ICCP Name'].notna() | iccp_rule_mask
+        df_con_iccp = df.loc[con_iccp_mask].copy()
+        df_sin_iccp = df.loc[~con_iccp_mask].copy()
         if df_con_iccp.empty:
-            Logger.write_log().log_all('info', "No hay señales con Import ICCP Name", logger_console, logger)
+            Logger.write_log().log_all('info', "No hay señales ICCP detectadas", logger_console, logger)
             return pd.DataFrame(), df_sin_iccp
+        # Para filas detectadas por regla y sin Import ICCP Name, rellenar con 'Name'
+        mask_necesita_name = iccp_rule_mask & df_con_iccp['Import ICCP Name'].isna()
+        if mask_necesita_name.any():
+            df_con_iccp.loc[mask_necesita_name, 'Import ICCP Name'] = df_con_iccp.loc[mask_necesita_name, 'Name'].fillna('')
         
         # Verificar columnas necesarias
         if 'Station' not in df_con_iccp.columns or 'S-A' not in df_con_iccp.columns:
@@ -843,13 +888,18 @@ def main():
     # Leer y procesar el archivo 32_10 para usar claves que existen en fep pero no tienen destination_key
     df_32_10 = pd.read_csv(os.path.join(ruta_scada, '32_10.csv'),usecols=['Key', 'DestinationKey', 'PointAddress','IntParms','pRTU'],
         encoding='ISO-8859-1',low_memory=False)
+    df_32_20 = pd.read_csv(os.path.join(ruta_scada, '32_20.csv'),usecols=['point_address','pRTU'],
+                           encoding='ISO-8859-1',low_memory=False)
     # Filtra IntParms válidos y conviértelos a int
     df_32_10 = df_32_10.dropna(subset=['IntParms'])
+    df_32_20=df_32_20.dropna(subset=['point_address'])
     df_32_10 = df_32_10[df_32_10['IntParms'].astype(str).str.strip() != '']
+    df_32_20 = df_32_20[df_32_20['point_address'].astype(str).str.strip() != '']
     df_32_10['IntParms'] = df_32_10['IntParms'].astype(float).astype(int)
+    df_32_20['point_address'] = df_32_20['point_address'].astype(float).astype(int)
     # Agrupa por pRTU y crea el diccionario
     rtu_to_intparms = df_32_10.groupby('pRTU')['IntParms'].apply(set).to_dict()
-    
+    rtu_to_pointaddress = df_32_20.groupby('pRTU')['point_address'].apply(set).to_dict()
     # Filtrar filas donde DestinationKey esté vacío o nulo
     df_32_10 = df_32_10[df_32_10['DestinationKey'].isna() |(df_32_10['DestinationKey'].astype(str).str.strip() == '')]
     # Filtrar filas donde Key comience por '01', '02', '03' o '04'
@@ -858,7 +908,7 @@ def main():
     diccionario_key_pointaddress = dict(zip(df_32_10['Key'].astype(str), df_32_10['PointAddress'].astype(int)))
     
     dfs = leer_hojas_excel(ruta_excel)
-    df_validado, lista_errores = validaciones(dfs, rtu_to_intparms)
+    df_validado, lista_errores = validaciones(dfs, rtu_to_intparms,rtu_to_pointaddress)
     if df_validado is not None:
         Logger.write_log().log_all('info', "Validaciones pasadas, procesando datos...", logger_console, logger)
         df_combinado = procesar_dataframes(df_validado)
